@@ -139,7 +139,8 @@ a:hover {
 
 .brand-logo-svg,
 .brand-logo-img {
-  height: 52px;
+  height: 58px;
+  max-width: 180px;
   width: auto;
   object-fit: contain;
   display: block;
@@ -148,7 +149,8 @@ a:hover {
 @media (max-width: 600px) {
   .brand-logo-svg,
   .brand-logo-img {
-    height: 42px;
+    height: 46px;
+    max-width: 140px;
   }
 }
 
