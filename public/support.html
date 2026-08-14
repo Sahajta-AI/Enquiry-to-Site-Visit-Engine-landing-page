@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contact &amp; Support — Sahajta AI</title>
+  <meta name="description" content="Get in touch with the Sahajta AI technical and support team for Enquiry-to-Site-Visit Engine inquiries.">
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .support-container {
+      max-width: 860px;
+      margin: 3rem auto 5rem auto;
+      padding: 0 1.5rem;
+    }
+    .support-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-lg);
+      padding: 3rem;
+      box-shadow: var(--shadow-sm);
+    }
+    .support-card h1 {
+      font-size: 2.25rem;
+      font-weight: 800;
+      color: var(--brand-forest);
+      margin-bottom: 0.5rem;
+    }
+    .support-subtitle {
+      font-size: 1.05rem;
+      color: var(--text-secondary);
+      margin-bottom: 2rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--border-light);
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+      margin-bottom: 2.5rem;
+    }
+    .info-box {
+      background: var(--bg-section-alt);
+      border: 1px solid var(--border-medium);
+      border-radius: var(--radius-md);
+      padding: 1.5rem;
+    }
+    .info-box h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--brand-forest);
+      margin-bottom: 0.5rem;
+    }
+    .info-box p {
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+    .support-form-title {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 1.25rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Minimal Header -->
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="/" class="brand-logo" aria-label="Sahajta AI Homepage">
+        <svg class="brand-logo-svg" viewBox="0 0 240 55" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <g transform="translate(118, 2)">
+            <path d="M12 2C8 6 3 10 3 17C3 21 6 24 10 24C12 24 14 23 15.5 21.5C17 23 19 24 21 24C25 24 28 21 28 17C28 10 23 6 19 2" stroke="#C8991A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <path d="M15.5 22V32" stroke="#C8991A" stroke-width="2.5" stroke-linecap="round"/>
+          </g>
+          <text x="5" y="44" font-family="'Playfair Display', Georgia, serif" font-size="36" font-weight="700" fill="#1B4332" letter-spacing="-0.5">Sahajta</text>
+        </svg>
+      </a>
+      <a href="/" class="btn-back">← Back to Home</a>
+    </div>
+  </header>
+
+  <main class="support-container">
+    <div class="support-card">
+      <h1>Contact &amp; Support</h1>
+      <p class="support-subtitle">We are here to assist residential real estate developers and partner teams.</p>
+
+      <div class="info-grid">
+        <div class="info-box">
+          <h3>✉️ Email Support</h3>
+          <p>For technical inquiries, system support, or strategy call rescheduling:</p>
+          <p style="margin-top: 0.5rem; font-weight: 700;"><a href="mailto:shubhang@sahajta.com">shubhang@sahajta.com</a></p>
+        </div>
+
+        <div class="info-box">
+          <h3>🏢 Corporate Details</h3>
+          <p><strong>Sahajta AI Solution Pvt Ltd</strong></p>
+          <p>Managed System Partner for Residential Developers</p>
+          <p style="margin-top: 0.5rem;"><a href="https://sahajta.com" target="_blank" rel="noopener">www.sahajta.com</a></p>
+        </div>
+      </div>
+
+      <h2 class="support-form-title">Send Us a Direct Message</h2>
+      <form id="support-contact-form" action="/api/submit-lead" method="POST">
+        <div class="form-group">
+          <label class="form-label" for="sup-name">Full Name *</label>
+          <input type="text" id="sup-name" name="name" class="form-input" placeholder="e.g. Vikram Sharma" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="sup-email">Email Address *</label>
+          <input type="email" id="sup-email" name="email" class="form-input" placeholder="vikram@apexrealty.com" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="sup-company">Company / Project Name *</label>
+          <input type="text" id="sup-company" name="company" class="form-input" placeholder="e.g. Apex Realty" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="sup-msg">How can we help? *</label>
+          <textarea id="sup-msg" name="notes" class="form-input" style="height: 110px; padding: 0.85rem;" placeholder="Tell us about your project or technical support question..." required></textarea>
+        </div>
+
+        <button type="submit" class="btn-primary">
+          <span>Send Message →</span>
+        </button>
+      </form>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <p class="footer-copy">&copy; 2026 Sahajta AI Solution Pvt Ltd. All rights reserved.</p>
+    </div>
+  </footer>
+
+</body>
+</html>

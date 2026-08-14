@@ -1,0 +1,14 @@
+{
+  "name": "sahajta-ai-landing-funnel",
+  "version": "1.0.0",
+  "description": "Sahajta AI Product Momentum Engine 3-step conversion funnel",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "nodemailer": "^9.0.3"
+  }
+}
