@@ -137,9 +137,19 @@ a:hover {
   text-decoration: none;
 }
 
-.brand-logo-svg {
-  height: 38px;
+.brand-logo-svg,
+.brand-logo-img {
+  height: 52px;
   width: auto;
+  object-fit: contain;
+  display: block;
+}
+
+@media (max-width: 600px) {
+  .brand-logo-svg,
+  .brand-logo-img {
+    height: 42px;
+  }
 }
 
 /* Minimal header badge */
