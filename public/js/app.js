@@ -313,19 +313,37 @@ document.addEventListener('DOMContentLoaded', () => {
   function extractCalComDate(data) {
     if (!data) return null;
     
-    // Check all known Cal.com event payload paths for startTime / date
+    // 1. Scan JSON string representation for ISO timestamps (e.g. 2026-08-24T14:30:00 or 2026-08-24)
+    try {
+      const jsonStr = typeof data === 'string' ? data : JSON.stringify(data);
+      const matches = jsonStr.match(/\b(202[4-9]-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?)/g);
+      if (matches && matches.length > 0) {
+        for (const matchStr of matches) {
+          const d = new Date(matchStr);
+          if (!isNaN(d.getTime())) return d;
+        }
+      }
+    } catch (err) {}
+
+    // 2. Direct property key lookup
     const possiblePaths = [
       data?.data?.booking?.startTime,
       data?.data?.booking?.start,
+      data?.data?.booking?.date,
       data?.data?.startTime,
       data?.data?.date,
+      data?.data?.start,
       data?.payload?.booking?.startTime,
+      data?.payload?.booking?.start,
+      data?.payload?.booking?.date,
       data?.payload?.startTime,
       data?.payload?.date,
       data?.booking?.startTime,
       data?.booking?.start,
       data?.booking?.date,
       data?.detail?.booking?.startTime,
+      data?.detail?.booking?.start,
+      data?.detail?.booking?.date,
       data?.detail?.startTime,
       data?.detail?.date,
       data?.date,
@@ -406,11 +424,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof overrideSlotText === 'string' && overrideSlotText.length > 5) {
       formattedSlot = overrideSlotText;
     } else {
-      // Fallback display if date wasn't passed in payload
-      const today = new Date();
-      formattedSlot = 'Confirmed Slot (' + today.toLocaleDateString('en-US', {
-        weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
-      }) + ')';
+      // Clean, accurate fallback label if date timestamp was not sent in postMessage
+      formattedSlot = 'Confirmed Strategy Call Slot';
     }
 
     wizardState.bookedSlot = formattedSlot;
