@@ -269,7 +269,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let isSubmittingLead = false;
 
-  // 6. Native 1-Click Frictionless Slot Picker & Cal.com Event Handling
+  // 6. Native Calendar & Time Slot System (1-Click Instant Slot Picker)
   function loadCalComEmbed() {
     const container = document.getElementById('cal-embed-container');
     if (!container) return;
@@ -277,58 +277,93 @@ document.addEventListener('DOMContentLoaded', () => {
     // Reset submission guard for fresh attempt
     isSubmittingLead = false;
 
-    // Generate upcoming 6 interactive slot dates for friction-free 1-click booking
-    const slots = [];
+    // Generate upcoming 6 business days
+    const upcomingDays = [];
     const today = new Date();
-    let added = 0;
     let dayOffset = 1;
 
-    while (added < 3) {
+    while (upcomingDays.length < 6) {
       const d = new Date(today);
       d.setDate(today.getDate() + dayOffset);
       dayOffset++;
-      // Skip Sunday if desired, or include all days
-      if (d.getDay() !== 0) {
-        const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-        slots.push(`${dateStr} at 11:00 AM (${wizardState.timezone})`);
-        slots.push(`${dateStr} at 03:00 PM (${wizardState.timezone})`);
-        added++;
+      if (d.getDay() !== 0) { // Skip Sunday
+        upcomingDays.push({
+          fullDate: d,
+          dayName: d.toLocaleDateString('en-US', { weekday: 'short' }),
+          dateNum: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          formattedDate: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+        });
       }
     }
 
-    const slotButtonsHtml = slots.map((slotText, idx) => `
-      <div class="option-card js-native-slot-card" data-slot="${slotText}" style="padding: 1rem 1.25rem; margin-bottom: 0.75rem;">
-        <div class="option-radio"></div>
-        <div style="text-align: left;">
-          <div style="font-weight: 700; font-size: 0.975rem; color: var(--text-main);">📅 ${slotText}</div>
-          <div style="font-size: 0.8rem; color: var(--text-muted);">15-Min Strategy Call with Shubhang Sethi</div>
-        </div>
-      </div>
-    `).join('');
+    // Standard Shubhang Cal.com time slots (15-min / 30-min intervals)
+    const timeSlots = [
+      '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM',
+      '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM',
+      '04:00 PM', '04:30 PM', '05:00 PM'
+    ];
 
-    container.innerHTML = `
-      <div style="padding: 1.25rem 1rem; text-align: center;">
-        <div style="font-size: 0.9rem; font-weight: 700; color: var(--brand-forest); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.05em;">
-          ⚡ Select Your Preferred Strategy Call Time (1-Click Instant Confirmation)
-        </div>
-        <div class="options-stack" style="max-width: 520px; margin: 0 auto;">
-          ${slotButtonsHtml}
-        </div>
-      </div>
-    `;
+    let selectedDayIndex = 0;
 
-    // Bind 1-click slot selection listeners
-    const slotCards = container.querySelectorAll('.js-native-slot-card');
-    slotCards.forEach(card => {
-      card.addEventListener('click', () => {
-        slotCards.forEach(c => c.classList.remove('selected'));
-        card.classList.add('selected');
-        const slotVal = card.dataset.slot;
-        
-        // Instant confirmation in 1 click
-        handleSlotConfirmation(slotVal);
+    function renderPicker() {
+      const activeDay = upcomingDays[selectedDayIndex];
+
+      const datePillsHtml = upcomingDays.map((day, idx) => `
+        <div class="date-pill ${idx === selectedDayIndex ? 'selected' : ''}" data-index="${idx}">
+          <div class="date-pill-day">${day.dayName}</div>
+          <div class="date-pill-date">${day.dateNum}</div>
+        </div>
+      `).join('');
+
+      const timeSlotBtnsHtml = timeSlots.map(timeStr => `
+        <button type="button" class="time-slot-btn js-time-slot" data-time="${timeStr}">
+          ${timeStr}
+        </button>
+      `).join('');
+
+      container.innerHTML = `
+        <div class="native-calendar-container">
+          <div>
+            <div class="date-picker-label">1. Select Call Date</div>
+            <div class="date-pills-row">
+              ${datePillsHtml}
+            </div>
+          </div>
+          
+          <div>
+            <div class="date-picker-label" style="margin-top: 0.5rem;">2. Select Time Slot (${wizardState.timezone})</div>
+            <div class="time-slots-grid">
+              ${timeSlotBtnsHtml}
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Bind Date Pill clicks
+      container.querySelectorAll('.date-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+          selectedDayIndex = parseInt(pill.dataset.index, 10);
+          renderPicker();
+        });
       });
-    });
+
+      // Bind Time Slot clicks
+      container.querySelectorAll('.js-time-slot').forEach(btn => {
+        btn.addEventListener('click', () => {
+          container.querySelectorAll('.js-time-slot').forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+          
+          const chosenTime = btn.dataset.time;
+          const chosenDay = upcomingDays[selectedDayIndex];
+          const fullSlotString = `${chosenDay.formattedDate} at ${chosenTime} (${wizardState.timezone})`;
+
+          // Trigger instant 1-click booking confirmation
+          handleSlotConfirmation(fullSlotString);
+        });
+      });
+    }
+
+    renderPicker();
   }
 
   // Helper: Extract Date object from any Cal.com payload structure
