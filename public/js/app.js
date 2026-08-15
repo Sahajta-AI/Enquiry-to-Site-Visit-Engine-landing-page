@@ -34,6 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function initMetaPixel(pixelId) {
     if (typeof window.fbq === 'function') {
+      window.fbq('set', 'autoConfig', false, pixelId);
       window.fbq('init', pixelId);
       window.fbq('track', 'PageView');
       console.log(`✅ [Meta Pixel Active]: Initialized with ID ${pixelId}`);
@@ -275,10 +276,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const encodedEmail = encodeURIComponent(wizardState.email);
     const encodedNotes = encodeURIComponent(wizardState.company ? `Company / Project: ${wizardState.company}` : '');
     
-    // Cal.com embed URL with pre-filled parameters to skip Cal.com contact form
+    // Cal.com embed URL with pre-filled parameters & clean light theme matching modal
     const calBaseUrl = window.CALENDAR_EMBED_URL || 'https://cal.com/shubhang-sethi/enquiry-to-site-visit-engine';
     const hasQuery = calBaseUrl.includes('?');
-    const calIframeUrl = `${calBaseUrl}${hasQuery ? '&' : '?'}name=${encodedName}&email=${encodedEmail}&notes=${encodedNotes}&layout=month_view`;
+    const calIframeUrl = `${calBaseUrl}${hasQuery ? '&' : '?'}name=${encodedName}&email=${encodedEmail}&notes=${encodedNotes}&theme=light&layout=month_view`;
 
     container.innerHTML = `
       <iframe 
@@ -360,11 +361,16 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('🗓️ [Cal.com Message Event]:', data);
       }
 
-      if (data && (
-        data.type === 'CAL:BOOKING_SUCCESSFUL' || 
-        data.action === 'bookingSuccessful' || 
-        data.event === 'bookingSuccessful'
-      )) {
+      const dataType = String(data?.type || data?.action || data?.event || '').toLowerCase();
+      const isBookingSuccess = (
+        dataType === 'cal:booking_successful' ||
+        dataType === 'bookingsuccessful' ||
+        dataType.includes('booking_successful') ||
+        dataType.includes('bookingsuccessful') ||
+        dataType.includes('scheduled')
+      );
+
+      if (data && isBookingSuccess) {
         console.log('🎉 [Cal.com Booking Successful]:', data);
         
         const extractedDate = extractCalComDate(data);
