@@ -269,53 +269,100 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let isSubmittingLead = false;
 
-  // 6. Native Calendar & Time Slot System (1-Click Instant Slot Picker)
+  // 6. Native Full Month Grid Calendar Component
   function loadCalComEmbed() {
     const container = document.getElementById('cal-embed-container');
     if (!container) return;
 
-    // Reset submission guard for fresh attempt
     isSubmittingLead = false;
 
-    // Generate upcoming 6 business days
-    const upcomingDays = [];
     const today = new Date();
-    let dayOffset = 1;
+    let currentYear = today.getFullYear();
+    let currentMonth = today.getMonth(); // 0-indexed
 
-    while (upcomingDays.length < 6) {
-      const d = new Date(today);
-      d.setDate(today.getDate() + dayOffset);
-      dayOffset++;
-      if (d.getDay() !== 0) { // Skip Sunday
-        upcomingDays.push({
-          fullDate: d,
-          dayName: d.toLocaleDateString('en-US', { weekday: 'short' }),
-          dateNum: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-          formattedDate: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-        });
-      }
-    }
+    // Default selection: tomorrow or first available business day
+    let selectedDate = new Date(today);
+    selectedDate.setDate(today.getDate() + 1);
+    if (selectedDate.getDay() === 0) selectedDate.setDate(selectedDate.getDate() + 1); // Skip Sunday
 
-    // Standard Shubhang Cal.com time slots (15-min / 30-min intervals)
+    let selectedTimeStr = '11:00 AM';
+
     const timeSlots = [
       '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM',
       '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM',
       '04:00 PM', '04:30 PM', '05:00 PM'
     ];
 
-    let selectedDayIndex = 0;
-    let selectedTimeStr = '11:00 AM';
+    function renderMonthCalendar() {
+      const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+      ];
 
-    function renderPicker() {
-      const activeDay = upcomingDays[selectedDayIndex];
-      const activeFullSlot = `${activeDay.formattedDate} at ${selectedTimeStr} (${wizardState.timezone})`;
+      // First day of current displayed month
+      const firstDayOfMonth = new Date(currentYear, currentMonth, 1);
+      const startingDayOfWeek = firstDayOfMonth.getDay(); // 0 = Sun
+      const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+      const daysInPrevMonth = new Date(currentYear, currentMonth, 0).getDate();
 
-      const datePillsHtml = upcomingDays.map((day, idx) => `
-        <div class="date-pill ${idx === selectedDayIndex ? 'selected' : ''}" data-index="${idx}">
-          <div class="date-pill-day">${day.dayName}</div>
-          <div class="date-pill-date">${day.dateNum}</div>
-        </div>
-      `).join('');
+      const dayCells = [];
+
+      // Prev month trailing days
+      for (let i = startingDayOfWeek - 1; i >= 0; i--) {
+        dayCells.push({
+          dayNum: daysInPrevMonth - i,
+          isCurrentMonth: false,
+          isDisabled: true
+        });
+      }
+
+      // Current month days
+      const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      for (let d = 1; d <= daysInMonth; d++) {
+        const cellDate = new Date(currentYear, currentMonth, d);
+        const isPast = cellDate < todayZero;
+        const isSunday = cellDate.getDay() === 0;
+        const isDisabled = isPast || isSunday;
+
+        const isSelected = (
+          selectedDate.getFullYear() === currentYear &&
+          selectedDate.getMonth() === currentMonth &&
+          selectedDate.getDate() === d
+        );
+
+        dayCells.push({
+          dayNum: d,
+          cellDate: cellDate,
+          isCurrentMonth: true,
+          isDisabled: isDisabled,
+          isSelected: isSelected
+        });
+      }
+
+      // Next month leading days to complete grid cells
+      const totalCells = dayCells.length > 35 ? 42 : 35;
+      const remaining = totalCells - dayCells.length;
+      for (let i = 1; i <= remaining; i++) {
+        dayCells.push({
+          dayNum: i,
+          isCurrentMonth: false,
+          isDisabled: true
+        });
+      }
+
+      const daysGridHtml = dayCells.map(cell => {
+        if (!cell.isCurrentMonth) {
+          return `<div class="cal-day-cell other-month">${cell.dayNum}</div>`;
+        }
+        if (cell.isDisabled) {
+          return `<div class="cal-day-cell disabled">${cell.dayNum}</div>`;
+        }
+        return `
+          <div class="cal-day-cell available ${cell.isSelected ? 'selected' : ''}" data-day="${cell.dayNum}">
+            ${cell.dayNum}
+          </div>
+        `;
+      }).join('');
 
       const timeSlotBtnsHtml = timeSlots.map(timeStr => `
         <button type="button" class="time-slot-btn js-time-slot ${timeStr === selectedTimeStr ? 'selected' : ''}" data-time="${timeStr}">
@@ -323,19 +370,41 @@ document.addEventListener('DOMContentLoaded', () => {
         </button>
       `).join('');
 
+      const formattedSelectedDate = selectedDate.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      });
+
+      const activeFullSlot = `${formattedSelectedDate} at ${selectedTimeStr} (${wizardState.timezone})`;
+
       container.innerHTML = `
-        <div class="native-calendar-container">
-          <div>
-            <div class="date-picker-label">🗓️ 1. Select Call Date</div>
-            <div class="date-pills-row">
-              ${datePillsHtml}
+        <div class="month-calendar-wrapper">
+          <div class="cal-layout-row">
+            <!-- Left Column: Full Month Grid -->
+            <div>
+              <div class="month-nav-header">
+                <button type="button" class="month-nav-btn" id="cal-prev-month">‹</button>
+                <div class="month-title">${monthNames[currentMonth]} ${currentYear}</div>
+                <button type="button" class="month-nav-btn" id="cal-next-month">›</button>
+              </div>
+
+              <div class="calendar-weekdays-grid">
+                <div>SUN</div><div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div>
+              </div>
+
+              <div class="calendar-days-grid">
+                ${daysGridHtml}
+              </div>
             </div>
-          </div>
-          
-          <div>
-            <div class="date-picker-label" style="margin-top: 0.25rem;">⏰ 2. Select Time Slot (${wizardState.timezone})</div>
-            <div class="time-slots-grid">
-              ${timeSlotBtnsHtml}
+
+            <!-- Right Column: Time Slots -->
+            <div>
+              <div class="date-picker-label" style="margin-top: 0.25rem;">⏰ Select Time (${wizardState.timezone})</div>
+              <div class="time-slots-grid" style="grid-template-columns: repeat(2, 1fr); max-height: 230px; overflow-y: auto;">
+                ${timeSlotBtnsHtml}
+              </div>
             </div>
           </div>
 
@@ -350,36 +419,57 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       `;
 
-      // Bind Date Pill clicks
-      container.querySelectorAll('.date-pill').forEach(pill => {
-        pill.addEventListener('click', () => {
-          selectedDayIndex = parseInt(pill.dataset.index, 10);
-          renderPicker();
+      // Month Nav Buttons
+      container.querySelector('#cal-prev-month').addEventListener('click', () => {
+        if (currentMonth === 0) {
+          currentMonth = 11;
+          currentYear--;
+        } else {
+          currentMonth--;
+        }
+        renderMonthCalendar();
+      });
+
+      container.querySelector('#cal-next-month').addEventListener('click', () => {
+        if (currentMonth === 11) {
+          currentMonth = 0;
+          currentYear++;
+        } else {
+          currentMonth++;
+        }
+        renderMonthCalendar();
+      });
+
+      // Day Cell Click
+      container.querySelectorAll('.cal-day-cell.available').forEach(cell => {
+        cell.addEventListener('click', () => {
+          const dayNum = parseInt(cell.dataset.day, 10);
+          selectedDate = new Date(currentYear, currentMonth, dayNum);
+          renderMonthCalendar();
         });
       });
 
-      // Bind Time Slot clicks
+      // Time Slot Click
       container.querySelectorAll('.js-time-slot').forEach(btn => {
         btn.addEventListener('click', () => {
           selectedTimeStr = btn.dataset.time;
-          renderPicker();
+          renderMonthCalendar();
         });
       });
 
-      // Bind Confirm Button click
+      // Confirm CTA Click
       const btnConfirmFinal = container.querySelector('#btn-confirm-final-slot');
       if (btnConfirmFinal) {
         btnConfirmFinal.addEventListener('click', () => {
           btnConfirmFinal.disabled = true;
           btnConfirmFinal.textContent = 'Confirming Booking...';
-          const finalDay = upcomingDays[selectedDayIndex];
-          const finalSlotStr = `${finalDay.formattedDate} at ${selectedTimeStr} (${wizardState.timezone})`;
+          const finalSlotStr = `${selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at ${selectedTimeStr} (${wizardState.timezone})`;
           handleSlotConfirmation(finalSlotStr);
         });
       }
     }
 
-    renderPicker();
+    renderMonthCalendar();
   }
 
   // Helper: Extract Date object from any Cal.com payload structure
