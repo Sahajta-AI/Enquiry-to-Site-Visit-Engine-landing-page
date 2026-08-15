@@ -83,10 +83,11 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       console.log(`[Meta Pixel (Simulated)]: ${eventName}`, params);
     }
-   // 1. Modal Toggle Handlers
+  // 1. Modal Toggle Handlers
   function openModal() {
     modalBackdrop.classList.add('active');
     document.body.classList.add('modal-open');
+    goToStep(1);
   }
 
   function closeModal() {
