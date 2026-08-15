@@ -80,9 +80,9 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (err) {
         console.warn('[Meta Pixel Error]:', err.message);
       }
-    } else {
-      console.log(`[Meta Pixel (Simulated)]: ${eventName}`, params);
     }
+  }
+
   // 1. Modal Toggle Handlers
   function openModal() {
     modalBackdrop.classList.add('active');
@@ -288,14 +288,6 @@ document.addEventListener('DOMContentLoaded', () => {
         allow="camera; microphone; autoplay; clipboard-write;"
       ></iframe>
     `;
-  }  </div>
-    `;
-
-    // Re-bind fallback button
-    const btnSim = document.getElementById('btn-simulate-booking');
-    if (btnSim) {
-      btnSim.addEventListener('click', handleSlotConfirmation);
-    }
   }
 
   // Helper: Extract Date object from any Cal.com payload structure
