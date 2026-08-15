@@ -304,9 +304,11 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
 
     let selectedDayIndex = 0;
+    let selectedTimeStr = '11:00 AM';
 
     function renderPicker() {
       const activeDay = upcomingDays[selectedDayIndex];
+      const activeFullSlot = `${activeDay.formattedDate} at ${selectedTimeStr} (${wizardState.timezone})`;
 
       const datePillsHtml = upcomingDays.map((day, idx) => `
         <div class="date-pill ${idx === selectedDayIndex ? 'selected' : ''}" data-index="${idx}">
@@ -316,7 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
       `).join('');
 
       const timeSlotBtnsHtml = timeSlots.map(timeStr => `
-        <button type="button" class="time-slot-btn js-time-slot" data-time="${timeStr}">
+        <button type="button" class="time-slot-btn js-time-slot ${timeStr === selectedTimeStr ? 'selected' : ''}" data-time="${timeStr}">
           ${timeStr}
         </button>
       `).join('');
@@ -324,17 +326,26 @@ document.addEventListener('DOMContentLoaded', () => {
       container.innerHTML = `
         <div class="native-calendar-container">
           <div>
-            <div class="date-picker-label">1. Select Call Date</div>
+            <div class="date-picker-label">🗓️ 1. Select Call Date</div>
             <div class="date-pills-row">
               ${datePillsHtml}
             </div>
           </div>
           
           <div>
-            <div class="date-picker-label" style="margin-top: 0.5rem;">2. Select Time Slot (${wizardState.timezone})</div>
+            <div class="date-picker-label" style="margin-top: 0.25rem;">⏰ 2. Select Time Slot (${wizardState.timezone})</div>
             <div class="time-slots-grid">
               ${timeSlotBtnsHtml}
             </div>
+          </div>
+
+          <div class="slot-summary-box">
+            <div class="selected-slot-badge">
+              <span>📅 Selected:</span> <span>${activeFullSlot}</span>
+            </div>
+            <button type="button" class="btn-primary" id="btn-confirm-final-slot" style="width: 100%; min-height: 48px; font-size: 1rem;">
+              <span>Confirm Strategy Call Slot →</span>
+            </button>
           </div>
         </div>
       `;
@@ -350,17 +361,22 @@ document.addEventListener('DOMContentLoaded', () => {
       // Bind Time Slot clicks
       container.querySelectorAll('.js-time-slot').forEach(btn => {
         btn.addEventListener('click', () => {
-          container.querySelectorAll('.js-time-slot').forEach(b => b.classList.remove('selected'));
-          btn.classList.add('selected');
-          
-          const chosenTime = btn.dataset.time;
-          const chosenDay = upcomingDays[selectedDayIndex];
-          const fullSlotString = `${chosenDay.formattedDate} at ${chosenTime} (${wizardState.timezone})`;
-
-          // Trigger instant 1-click booking confirmation
-          handleSlotConfirmation(fullSlotString);
+          selectedTimeStr = btn.dataset.time;
+          renderPicker();
         });
       });
+
+      // Bind Confirm Button click
+      const btnConfirmFinal = container.querySelector('#btn-confirm-final-slot');
+      if (btnConfirmFinal) {
+        btnConfirmFinal.addEventListener('click', () => {
+          btnConfirmFinal.disabled = true;
+          btnConfirmFinal.textContent = 'Confirming Booking...';
+          const finalDay = upcomingDays[selectedDayIndex];
+          const finalSlotStr = `${finalDay.formattedDate} at ${selectedTimeStr} (${wizardState.timezone})`;
+          handleSlotConfirmation(finalSlotStr);
+        });
+      }
     }
 
     renderPicker();
