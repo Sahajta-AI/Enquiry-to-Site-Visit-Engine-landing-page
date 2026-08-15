@@ -267,28 +267,68 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 6. Cal.com Dynamic Embed & Event Handling (Pre-filled URL & Frictionless Frame)
+  let isSubmittingLead = false;
+
+  // 6. Native 1-Click Frictionless Slot Picker & Cal.com Event Handling
   function loadCalComEmbed() {
     const container = document.getElementById('cal-embed-container');
     if (!container) return;
 
-    const encodedName = encodeURIComponent(wizardState.name);
-    const encodedEmail = encodeURIComponent(wizardState.email);
-    const encodedNotes = encodeURIComponent(wizardState.company ? `Company / Project: ${wizardState.company}` : '');
-    
-    // Cal.com embed URL with pre-filled parameters & clean light theme matching modal
-    const calBaseUrl = window.CALENDAR_EMBED_URL || 'https://cal.com/shubhang-sethi/enquiry-to-site-visit-engine';
-    const hasQuery = calBaseUrl.includes('?');
-    const calIframeUrl = `${calBaseUrl}${hasQuery ? '&' : '?'}name=${encodedName}&email=${encodedEmail}&notes=${encodedNotes}&theme=light&layout=month_view`;
+    // Reset submission guard for fresh attempt
+    isSubmittingLead = false;
+
+    // Generate upcoming 6 interactive slot dates for friction-free 1-click booking
+    const slots = [];
+    const today = new Date();
+    let added = 0;
+    let dayOffset = 1;
+
+    while (added < 3) {
+      const d = new Date(today);
+      d.setDate(today.getDate() + dayOffset);
+      dayOffset++;
+      // Skip Sunday if desired, or include all days
+      if (d.getDay() !== 0) {
+        const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        slots.push(`${dateStr} at 11:00 AM (${wizardState.timezone})`);
+        slots.push(`${dateStr} at 03:00 PM (${wizardState.timezone})`);
+        added++;
+      }
+    }
+
+    const slotButtonsHtml = slots.map((slotText, idx) => `
+      <div class="option-card js-native-slot-card" data-slot="${slotText}" style="padding: 1rem 1.25rem; margin-bottom: 0.75rem;">
+        <div class="option-radio"></div>
+        <div style="text-align: left;">
+          <div style="font-weight: 700; font-size: 0.975rem; color: var(--text-main);">📅 ${slotText}</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">15-Min Strategy Call with Shubhang Sethi</div>
+        </div>
+      </div>
+    `).join('');
 
     container.innerHTML = `
-      <iframe 
-        src="${calIframeUrl}" 
-        style="width: 100%; height: 620px; border: none; border-radius: 12px;"
-        title="Select Strategy Call Slot"
-        allow="camera; microphone; autoplay; clipboard-write;"
-      ></iframe>
+      <div style="padding: 1.25rem 1rem; text-align: center;">
+        <div style="font-size: 0.9rem; font-weight: 700; color: var(--brand-forest); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.05em;">
+          ⚡ Select Your Preferred Strategy Call Time (1-Click Instant Confirmation)
+        </div>
+        <div class="options-stack" style="max-width: 520px; margin: 0 auto;">
+          ${slotButtonsHtml}
+        </div>
+      </div>
     `;
+
+    // Bind 1-click slot selection listeners
+    const slotCards = container.querySelectorAll('.js-native-slot-card');
+    slotCards.forEach(card => {
+      card.addEventListener('click', () => {
+        slotCards.forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        const slotVal = card.dataset.slot;
+        
+        // Instant confirmation in 1 click
+        handleSlotConfirmation(slotVal);
+      });
+    });
   }
 
   // Helper: Extract Date object from any Cal.com payload structure
