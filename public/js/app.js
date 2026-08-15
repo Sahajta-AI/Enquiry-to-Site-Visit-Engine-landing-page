@@ -83,14 +83,10 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       console.log(`[Meta Pixel (Simulated)]: ${eventName}`, params);
     }
-  }
-
-  // 1. Modal Toggle Handlers
+   // 1. Modal Toggle Handlers
   function openModal() {
     modalBackdrop.classList.add('active');
     document.body.classList.add('modal-open');
-    trackMetaEvent('InitiateCheckout', { step_name: 'ModalOpened', last_action: 'ModalOpened' });
-    trackMetaEvent('IntakeModalOpened', { last_action: 'ModalOpened' }, true);
   }
 
   function closeModal() {
@@ -142,14 +138,12 @@ document.addEventListener('DOMContentLoaded', () => {
       wizardStep3.classList.add('active');
       stepPill.textContent = 'Step 3 of 4 — Contact Details';
       progressFill.style.width = '75%';
+      // Track InitiateCheckout ONCE when user reaches Contact Details step
+      trackMetaEvent('InitiateCheckout', { content_name: 'IntakeCompleted' });
     } else if (stepNumber === 4) {
       wizardStep4.classList.add('active');
       stepPill.textContent = 'Step 4 of 4 — Select Strategy Call Slot';
       progressFill.style.width = '100%';
-      trackMetaEvent('Lead', {
-        content_name: 'Enquiry-to-Site-Visit Engine Intake',
-        status: 'Contact Submitted'
-      });
     } else if (stepNumber === 5) {
       wizardThankYou.classList.add('active');
       stepPill.textContent = '✓ Booking Confirmed';
@@ -166,8 +160,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const value = card.dataset.value;
       wizardState.q1_situation = value;
       btnStep1Next.disabled = false;
-      
-      trackMetaEvent('IntakeStep1Completed', { q1_situation: value, last_action: 'Q1_Answered' }, true);
 
       // Auto-advance after brief smooth feedback
       setTimeout(() => {
@@ -191,8 +183,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const value = card.dataset.value;
       wizardState.q2_urgency = value;
       btnStep2Next.disabled = false;
-      
-      trackMetaEvent('IntakeStep2Completed', { q2_urgency: value, last_action: 'Q2_Answered' }, true);
 
       // Auto-advance after brief smooth feedback
       setTimeout(() => {
@@ -266,8 +256,8 @@ document.addEventListener('DOMContentLoaded', () => {
         wizardState.email = emailInput.value.trim();
         wizardState.whatsapp_number = phoneInput.value.trim();
         
-        trackMetaEvent('Lead', { content_name: 'ContactInfoSubmitted', last_action: 'ContactFormSubmitted' });
-        trackMetaEvent('FormContactSubmitted', { last_action: 'ContactFormSubmitted' }, true);
+        // Track Lead ONCE when Contact Form is submitted
+        trackMetaEvent('Lead', { content_name: 'ContactForm' });
 
         loadCalComEmbed();
         goToStep(4);
@@ -275,31 +265,29 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 6. Cal.com Dynamic Embed & Event Handling
+  // 6. Cal.com Dynamic Embed & Event Handling (Pre-filled URL & Frictionless Frame)
   function loadCalComEmbed() {
     const container = document.getElementById('cal-embed-container');
     if (!container) return;
 
     const encodedName = encodeURIComponent(wizardState.name);
     const encodedEmail = encodeURIComponent(wizardState.email);
+    const encodedNotes = encodeURIComponent(wizardState.company ? `Company / Project: ${wizardState.company}` : '');
     
-    // Configurable Cal.com URL or fallback standard embed link
+    // Cal.com embed URL with pre-filled parameters to skip Cal.com contact form
     const calBaseUrl = window.CALENDAR_EMBED_URL || 'https://cal.com/shubhang-sethi/enquiry-to-site-visit-engine';
     const hasQuery = calBaseUrl.includes('?');
-    const calIframeUrl = `${calBaseUrl}${hasQuery ? '&' : '?'}name=${encodedName}&email=${encodedEmail}&layout=month_view`;
+    const calIframeUrl = `${calBaseUrl}${hasQuery ? '&' : '?'}name=${encodedName}&email=${encodedEmail}&notes=${encodedNotes}&layout=month_view`;
 
     container.innerHTML = `
       <iframe 
         src="${calIframeUrl}" 
-        style="width: 100%; height: 580px; border: none; border-radius: 8px;"
+        style="width: 100%; height: 620px; border: none; border-radius: 12px;"
         title="Select Strategy Call Slot"
         allow="camera; microphone; autoplay; clipboard-write;"
       ></iframe>
-      <div style="padding: 0.75rem 1rem; text-align: center; background: var(--bg-section-alt); border-top: 1px solid var(--border-light);">
-        <button type="button" class="btn-primary" id="btn-simulate-booking" style="min-height: 42px; font-size: 0.9rem; padding: 0.5rem 1.25rem;">
-          <span>Confirm Booking &amp; Finalize →</span>
-        </button>
-      </div>
+    `;
+  }  </div>
     `;
 
     // Re-bind fallback button
@@ -434,8 +422,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function submitLeadToBackend(payload) {
     try {
-      btnSimulateBooking.disabled = true;
-      btnSimulateBooking.textContent = 'Confirming Slot...';
+      if (btnSimulateBooking) {
+        btnSimulateBooking.disabled = true;
+        btnSimulateBooking.textContent = 'Confirming Slot...';
+      }
 
       const response = await fetch('/api/submit-lead', {
         method: 'POST',
@@ -448,14 +438,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const result = await response.json();
       
       if (result.success) {
-        // Track Schedule event on Meta Pixel for final conversion stage
+        // Track Schedule event on Meta Pixel ONCE for final conversion stage
         trackMetaEvent('Schedule', {
-          content_name: 'Enquiry-to-Site-Visit Engine Strategy Call',
+          content_name: 'StrategyCallBooked',
           value: 1.00,
-          currency: 'USD',
-          last_action: 'MeetingBooked'
+          currency: 'USD'
         });
-        trackMetaEvent('MeetingBookingCompleted', { last_action: 'MeetingBooked' }, true);
 
         // Update Thank-You View details
         document.getElementById('ty-first-name').textContent = payload.name.split(' ')[0] || payload.name;
@@ -474,8 +462,10 @@ document.addEventListener('DOMContentLoaded', () => {
         goToStep(5);
       } else {
         alert('Submission error: ' + (result.error || 'Please try again.'));
-        btnSimulateBooking.disabled = false;
-        btnSimulateBooking.textContent = 'Simulate Booking Slot →';
+        if (btnSimulateBooking) {
+          btnSimulateBooking.disabled = false;
+          btnSimulateBooking.textContent = 'Simulate Booking Slot →';
+        }
       }
     } catch (err) {
       console.error('Error submitting lead:', err);
