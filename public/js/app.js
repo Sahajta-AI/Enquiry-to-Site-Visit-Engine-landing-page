@@ -407,12 +407,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             <!-- Right Column: Time Slots -->
             <div class="time-slots-container">
-              <div class="time-section-label">☀️ Morning Slots</div>
+              <div class="time-section-label">Morning Slots</div>
               <div class="time-slots-grid">
                 ${morningBtnsHtml}
               </div>
 
-              <div class="time-section-label" style="margin-top: 0.75rem;">🌇 Afternoon &amp; Evening</div>
+              <div class="time-section-label" style="margin-top: 0.75rem;">Afternoon &amp; Evening</div>
               <div class="time-slots-grid">
                 ${afternoonBtnsHtml}
               </div>
@@ -421,7 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
           <div class="slot-summary-box">
             <div class="selected-slot-badge">
-              <span>📅 Selected:</span> <span>${activeFullSlot}</span>
+              <span>Selected:</span> <span>${activeFullSlot}</span>
             </div>
             <button type="button" class="btn-primary" id="btn-confirm-final-slot" style="width: 100%; min-height: 48px; font-size: 1rem;">
               <span>Confirm Strategy Call Slot →</span>
