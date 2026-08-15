@@ -1090,14 +1090,70 @@ video::-webkit-media-controls-overlay-play-button {
 
 .cal-layout-row {
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
+  grid-template-columns: 1.15fr 0.85fr;
   gap: 1.25rem;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 620px) {
   .cal-layout-row {
     grid-template-columns: 1fr;
   }
+}
+
+.time-slots-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.time-section-label {
+  font-size: 0.725rem;
+  font-weight: 700;
+  color: var(--brand-forest);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.4rem;
+  margin-bottom: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.time-slots-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.45rem;
+}
+
+.time-slot-btn {
+  padding: 0.55rem 0.4rem;
+  border-radius: var(--radius-sm);
+  border: 1.5px solid var(--border-light);
+  background: #FFFFFF;
+  color: var(--text-main);
+  font-size: 0.825rem;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--transition-fast);
+}
+
+.time-slot-btn:hover {
+  border-color: var(--brand-forest);
+  color: var(--brand-forest);
+  background: var(--brand-forest-light);
+}
+
+.time-slot-btn.selected {
+  background: var(--brand-forest) !important;
+  color: #FFFFFF !important;
+  border-color: var(--brand-forest) !important;
+  font-weight: 800;
+  box-shadow: var(--shadow-sm);
 }
 
 /* Selected Summary Badge & Confirm CTA */

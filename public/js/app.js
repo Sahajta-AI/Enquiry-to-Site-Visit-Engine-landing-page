@@ -364,11 +364,17 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
       }).join('');
 
-      const timeSlotBtnsHtml = timeSlots.map(timeStr => `
+      const morningSlots = ['10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM'];
+      const afternoonSlots = ['02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM', '04:00 PM', '04:30 PM', '05:00 PM'];
+
+      const renderSlotBtn = (timeStr) => `
         <button type="button" class="time-slot-btn js-time-slot ${timeStr === selectedTimeStr ? 'selected' : ''}" data-time="${timeStr}">
-          ${timeStr}
+          ${timeStr === selectedTimeStr ? '✓ ' : ''}${timeStr}
         </button>
-      `).join('');
+      `;
+
+      const morningBtnsHtml = morningSlots.map(renderSlotBtn).join('');
+      const afternoonBtnsHtml = afternoonSlots.map(renderSlotBtn).join('');
 
       const formattedSelectedDate = selectedDate.toLocaleDateString('en-US', {
         weekday: 'short',
@@ -400,10 +406,15 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
 
             <!-- Right Column: Time Slots -->
-            <div>
-              <div class="date-picker-label" style="margin-top: 0.25rem;">⏰ Select Time (${wizardState.timezone})</div>
-              <div class="time-slots-grid" style="grid-template-columns: repeat(2, 1fr); max-height: 230px; overflow-y: auto;">
-                ${timeSlotBtnsHtml}
+            <div class="time-slots-container">
+              <div class="time-section-label">☀️ Morning Slots</div>
+              <div class="time-slots-grid">
+                ${morningBtnsHtml}
+              </div>
+
+              <div class="time-section-label" style="margin-top: 0.75rem;">🌇 Afternoon &amp; Evening</div>
+              <div class="time-slots-grid">
+                ${afternoonBtnsHtml}
               </div>
             </div>
           </div>
