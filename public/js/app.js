@@ -306,6 +306,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (wizardState.whatsapp_number) params.append('phone', wizardState.whatsapp_number);
     if (wizardState.company) params.append('notes', `Company: ${wizardState.company}`);
     params.append('embed', 'true');
+    params.append('theme', 'light');
+    params.append('hideEventTypeDetails', 'true');
     params.append('layout', 'month_view');
 
     const calEmbedUrl = `${calBaseUrl}?${params.toString()}`;
@@ -313,14 +315,25 @@ document.addEventListener('DOMContentLoaded', () => {
     container.innerHTML = `
       <iframe
         src="${calEmbedUrl}"
-        style="width: 100%; height: 640px; border: 0; border-radius: var(--radius-md);"
+        style="width: 100%; height: 520px; border: 0; border-radius: var(--radius-md); background: #FFFFFF;"
         title="Select Strategy Call Slot"
         loading="eager"
       ></iframe>
-      <div style="text-align: center; padding: 0.75rem 0; font-size: 0.875rem; color: var(--text-muted);">
+      <div style="text-align: center; padding: 0.5rem 0; font-size: 0.85rem; color: var(--text-muted);">
         Having trouble loading the calendar? <a href="${calBaseUrl}" target="_blank" style="color: var(--primary-accent); text-decoration: underline; font-weight: 500;">Open Cal.com booking page in a new tab ↗</a>
       </div>
     `;
+
+    if (window.Cal) {
+      try {
+        window.Cal("ui", {
+          theme: "light",
+          styles: { branding: { brandColor: "#1B4332" } },
+          hideEventTypeDetails: true,
+          layout: "month_view"
+        });
+      } catch (err) {}
+    }
   }
 
   // Helper: Extract Date object from any Cal.com payload structure
