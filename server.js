@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
+const https = require('https');
 
 // Load environment variables from .env if present
 const envPath = path.join(__dirname, '.env');
@@ -119,6 +120,48 @@ function normalizePhone(phone) {
   return digits.length >= 7 ? digits : undefined;
 }
 
+// Helper: Native HTTPS POST Request for Meta Graph API
+function postJsonHttps(urlStr, bodyObj) {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(urlStr);
+    const postData = JSON.stringify(bodyObj);
+
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: 443,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      },
+      timeout: 10000
+    };
+
+    const req = https.request(options, (res) => {
+      let responseBody = '';
+      res.on('data', (chunk) => { responseBody += chunk; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(responseBody);
+          resolve({ status: res.statusCode, data: parsed });
+        } catch (e) {
+          resolve({ status: res.statusCode, data: responseBody });
+        }
+      });
+    });
+
+    req.on('error', (err) => reject(err));
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('HTTPS Request Timed Out'));
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
 // Direct Backend Meta Conversions API (CAPI) Engine
 async function sendMetaCapiEvent(eventName, req, userData = {}, customData = {}, eventId = null) {
   const config = getLatestConfig();
@@ -180,18 +223,26 @@ async function sendMetaCapiEvent(eventName, req, userData = {}, customData = {},
     }
 
     const graphUrl = `https://graph.facebook.net/v20.0/${pixelId}/events?access_token=${apiToken}`;
-    const capiRes = await fetch(graphUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    
+    let capiRes;
+    try {
+      capiRes = await postJsonHttps(graphUrl, payload);
+    } catch (err) {
+      // Fallback to fetch if available
+      const fetchRes = await fetch(graphUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await fetchRes.json();
+      capiRes = { status: fetchRes.status, data: data };
+    }
 
-    const capiData = await capiRes.json();
-    if (capiRes.ok) {
-      console.log(`✅ [Meta CAPI Success]: Event "${eventName}" dispatched to Meta Graph API. Received: ${capiData.events_received || 1}`);
+    if (capiRes.status >= 200 && capiRes.status < 300) {
+      console.log(`✅ [Meta CAPI Success]: Event "${eventName}" dispatched to Meta Graph API. Received: ${capiRes.data?.events_received || 1}`);
       return true;
     } else {
-      console.warn(`⚠️ [Meta CAPI Warning]: Meta Graph API returned error:`, capiData.error || capiData);
+      console.warn(`⚠️ [Meta CAPI Warning]: Meta Graph API returned status ${capiRes.status}:`, capiRes.data?.error || capiRes.data);
       return false;
     }
   } catch (err) {
