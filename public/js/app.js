@@ -515,6 +515,11 @@ document.addEventListener('DOMContentLoaded', () => {
         btnConfirmFinal.addEventListener('click', () => {
           btnConfirmFinal.disabled = true;
           btnConfirmFinal.textContent = 'Confirming Booking...';
+          const yyyy = selectedDate.getFullYear();
+          const mm = String(selectedDate.getMonth() + 1).padStart(2, '0');
+          const dd = String(selectedDate.getDate()).padStart(2, '0');
+          wizardState.slotDate = `${yyyy}-${mm}-${dd}`;
+          wizardState.slotTime = selectedTimeStr;
           const finalSlotStr = `${selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at ${selectedTimeStr} (${wizardState.timezone})`;
           handleSlotConfirmation(finalSlotStr);
         });

@@ -296,10 +296,10 @@ app.get('/api/available-slots', async (req, res) => {
     try {
       const startTime = `${dateStr}T00:00:00.000Z`;
       const endTime = `${dateStr}T23:59:59.000Z`;
-      const calRes = await fetch(`https://api.cal.com/v2/slots/available?startTime=${startTime}&endTime=${endTime}`, {
+      const calRes = await fetch(`https://api.cal.com/v2/slots/available?startTime=${startTime}&endTime=${endTime}&eventTypeId=6659881`, {
         headers: {
           'Authorization': `Bearer ${calApiKey}`,
-          'cal-api-version': '2024-08-13'
+          'User-Agent': 'Sahajta-AI-Server/1.0 (Node.js)'
         }
       });
       if (calRes.ok) {
@@ -417,6 +417,62 @@ UTM Campaign:         ${utm_campaign || 'Direct / None'}
     });
   } else {
     console.log('ℹ️ [Odoo CRM]: No ODOO_API_KEY set in .env. Skipping Odoo sync.');
+  }
+
+  // Automatic Cal.com & Google Calendar Event Creation
+  const calApiKey = config.CAL_API_KEY || process.env.CAL_API_KEY || '';
+  let googleMeetUrl = null;
+
+  if (calApiKey && req.body.slotDate && req.body.slotTime) {
+    try {
+      const datePart = req.body.slotDate;
+      const timeStr = req.body.slotTime;
+      const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (match) {
+        let hours = parseInt(match[1], 10);
+        const minutes = parseInt(match[2], 10);
+        const ampm = match[3].toUpperCase();
+        if (ampm === 'PM' && hours < 12) hours += 12;
+        if (ampm === 'AM' && hours === 12) hours = 0;
+        const hh = String(hours).padStart(2, '0');
+        const mm = String(minutes).padStart(2, '0');
+        
+        const isoString = `${datePart}T${hh}:${mm}:00+05:30`;
+        const startDt = new Date(isoString);
+
+        const calRes = await fetch('https://api.cal.com/v2/bookings', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${calApiKey}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'Sahajta-AI-Server/1.0 (Node.js)'
+          },
+          body: JSON.stringify({
+            start: startDt.toISOString(),
+            eventTypeId: 6659881,
+            timeZone: 'Asia/Kolkata',
+            language: 'en',
+            metadata: {},
+            responses: {
+              name: name,
+              email: email,
+              notes: `Company: ${company} | Phone: ${whatsapp_number} | Q1: ${q1_situation || 'N/A'} | Q2: ${q2_urgency || 'N/A'}`
+            }
+          })
+        });
+
+        if (calRes.ok) {
+          const calData = await calRes.json();
+          googleMeetUrl = calData.data?.videoCallUrl || calData.data?.location || null;
+          console.log(`✅ [Cal.com Sync Success]: Google Calendar booking created! ID: ${calData.data?.id} | Meet: ${googleMeetUrl}`);
+        } else {
+          const errBody = await calRes.text();
+          console.warn('⚠️ [Cal.com Booking Notice]:', errBody);
+        }
+      }
+    } catch (calErr) {
+      console.error('⚠️ [Cal.com Booking Error]:', calErr.message);
+    }
   }
 
   // Direct Backend Meta Conversions API (CAPI) Dispatch (Awaited for Vercel serverless completion guarantee)
