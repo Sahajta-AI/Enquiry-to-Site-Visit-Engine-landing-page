@@ -103,6 +103,7 @@ function getLatestConfig() {
     ODOO_USER: process.env.ODOO_USER || 'shubhangsethi@gmail.com',
     ODOO_API_KEY: process.env.ODOO_API_KEY || '',
     CALENDAR_EMBED_URL: process.env.CALENDAR_EMBED_URL || 'https://cal.com/shubhang-sethi/enquiry-to-site-visit-engine',
+    CAL_API_KEY: process.env.CAL_API_KEY || '',
     META_PIXEL_ID: process.env.META_PIXEL_ID || '909588332098654',
     META_CAPI_TOKEN: process.env.META_CAPI_TOKEN || ''
   };
@@ -288,13 +289,16 @@ app.get('/api/available-slots', async (req, res) => {
     '04:00 PM', '04:30 PM', '05:00 PM'
   ];
 
-  if (process.env.CAL_API_KEY && dateStr) {
+  const config = getLatestConfig();
+  const calApiKey = config.CAL_API_KEY || process.env.CAL_API_KEY || '';
+
+  if (calApiKey && dateStr) {
     try {
       const startTime = `${dateStr}T00:00:00.000Z`;
       const endTime = `${dateStr}T23:59:59.000Z`;
       const calRes = await fetch(`https://api.cal.com/v2/slots/available?startTime=${startTime}&endTime=${endTime}`, {
         headers: {
-          'Authorization': `Bearer ${process.env.CAL_API_KEY}`,
+          'Authorization': `Bearer ${calApiKey}`,
           'cal-api-version': '2024-08-13'
         }
       });
