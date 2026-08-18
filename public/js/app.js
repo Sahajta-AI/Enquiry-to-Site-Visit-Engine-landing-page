@@ -390,7 +390,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const slotRes = await fetch(`/api/available-slots?date=${formattedDateIso}`);
         if (slotRes.ok) {
           const slotData = await slotRes.json();
-          if (slotData && Array.isArray(slotData.slots) && slotData.slots.length > 0) {
+          if (slotData && Array.isArray(slotData.slots)) {
             availableSlots = slotData.slots;
           }
         }

@@ -312,10 +312,7 @@ app.get('/api/available-slots', async (req, res) => {
               const timeFormatted = dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
               if (!slotsList.includes(timeFormatted)) slotsList.push(timeFormatted);
             });
-          }
-          if (slotsList.length > 0) {
-            return res.json({ date: dateStr, slots: slotsList });
-          }
+          return res.json({ date: dateStr, slots: slotsList });
         }
       }
     } catch (err) {
