@@ -276,14 +276,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     isSubmittingLead = false;
 
-    // Retrieve Cal.com URL from server config or use environment default
-    const calBaseUrl = siteConfig.calendarEmbedUrl || 'https://cal.com/shubhang-sethi/enquiry-to-site-visit-engine';
+    // Retrieve Cal.com URL from global config or fallback
+    const calBaseUrl = window.CALENDAR_EMBED_URL || 'https://cal.com/shubhang-sethi/enquiry-to-site-visit-engine';
     
     // Construct pre-filled parameter query string from Step 3 intake data
     const params = new URLSearchParams();
     if (wizardState.name) params.append('name', wizardState.name);
     if (wizardState.email) params.append('email', wizardState.email);
-    if (wizardState.whatsapp) params.append('phone', wizardState.whatsapp);
+    if (wizardState.whatsapp_number) params.append('phone', wizardState.whatsapp_number);
     if (wizardState.company) params.append('notes', `Company: ${wizardState.company}`);
     params.append('embed', 'true');
     params.append('layout', 'month_view');
