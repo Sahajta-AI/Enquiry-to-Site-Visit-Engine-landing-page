@@ -668,6 +668,6 @@
     (function (C, A, L) { let p = function (a, ar) { a.q.push(ar); }; let l = C.Cal = C.Cal || function () { let cal = l; let arg = arguments; if (!cal.q) { cal.q = []; } if (typeof arg[0] === 'string') { if (arg[0] === 'init') { let UniqueId = arg[1]; let cfg = arg[2]; if (!cal.ns) { cal.ns = {}; } cal.ns[UniqueId] = cal.ns[UniqueId] || function () { let arg = arguments; let q = cal.ns[UniqueId].q; if (q) { q.push(arg); } else { cal.ns[UniqueId].q = [arg]; } }; p(cal.ns[UniqueId], arg); } else { p(cal, arg); } } else { p(cal, arg); } }; })(window, "https://app.cal.com/embed/embed.js", "init");
     Cal("init", {origin:"https://cal.com"});
   </script>
-  <script src="/js/app.js"></script>
+  <script src="/js/app.js?v=1.0.3"></script>
 </body>
 </html>

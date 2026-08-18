@@ -258,11 +258,31 @@ document.addEventListener('DOMContentLoaded', () => {
         wizardState.email = emailInput.value.trim();
         wizardState.whatsapp_number = phoneInput.value.trim();
         
-        // Track Lead ONCE when Contact Form is submitted
-        trackMetaEvent('Lead', { content_name: 'ContactForm' });
+        // Track Lead ONCE when Contact Form is submitted (safe execution)
+        try {
+          trackMetaEvent('Lead', { content_name: 'ContactForm' });
+        } catch (err) {
+          console.warn('Meta pixel lead tracking notice:', err);
+        }
 
-        loadCalComEmbed();
+        try {
+          loadCalComEmbed();
+        } catch (err) {
+          console.error('Cal.com embed load error:', err);
+        }
+
+        // Unconditionally advance to Step 4
         goToStep(4);
+      }
+    });
+  }
+
+  if (btnStep3Submit) {
+    btnStep3Submit.addEventListener('click', (e) => {
+      if (contactForm && typeof contactForm.requestSubmit === 'function') {
+        contactForm.requestSubmit();
+      } else if (contactForm) {
+        contactForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
       }
     });
   }
