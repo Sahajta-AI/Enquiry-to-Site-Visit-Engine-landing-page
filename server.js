@@ -115,6 +115,49 @@ app.get('/api/config', (req, res) => {
   });
 });
 
+// Dynamic available slots endpoint
+app.get('/api/available-slots', async (req, res) => {
+  const dateStr = req.query.date;
+  const defaultSlots = [
+    '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM',
+    '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM',
+    '04:00 PM', '04:30 PM', '05:00 PM'
+  ];
+
+  if (process.env.CAL_API_KEY && dateStr) {
+    try {
+      const startTime = `${dateStr}T00:00:00.000Z`;
+      const endTime = `${dateStr}T23:59:59.000Z`;
+      const calRes = await fetch(`https://api.cal.com/v2/slots/available?startTime=${startTime}&endTime=${endTime}`, {
+        headers: {
+          'Authorization': `Bearer ${process.env.CAL_API_KEY}`,
+          'cal-api-version': '2024-08-13'
+        }
+      });
+      if (calRes.ok) {
+        const data = await calRes.json();
+        if (data && data.data && data.data.slots) {
+          const slotsList = [];
+          for (const k in data.data.slots) {
+            data.data.slots[k].forEach(slot => {
+              const dt = new Date(slot.time || slot.startTime);
+              const timeFormatted = dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+              if (!slotsList.includes(timeFormatted)) slotsList.push(timeFormatted);
+            });
+          }
+          if (slotsList.length > 0) {
+            return res.json({ date: dateStr, slots: slotsList });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Cal API slot fetch error:', err.message);
+    }
+  }
+
+  return res.json({ date: dateStr, slots: defaultSlots });
+});
+
 // API Route: Submit Lead Intake & Dispatch Email
 app.post('/api/submit-lead', async (req, res) => {
   const config = getLatestConfig();
