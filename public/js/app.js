@@ -289,6 +289,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let isSubmittingLead = false;
 
+  const monthSlotsCache = {};
+
+  async function preloadMonthSlots(year, month) {
+    const today = new Date();
+    const targetYear = year || today.getFullYear();
+    const targetMonth = month !== undefined ? month : today.getMonth();
+    const monthStr = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}`;
+    if (monthSlotsCache[monthStr]) return monthSlotsCache[monthStr];
+
+    try {
+      const monthRes = await fetch(`/api/available-slots?month=${monthStr}`);
+      if (monthRes.ok) {
+        const monthData = await monthRes.json();
+        if (monthData && monthData.availableDates) {
+          monthSlotsCache[monthStr] = monthData;
+          return monthData;
+        }
+      }
+    } catch (err) {}
+    return null;
+  }
+
+  // Immediately start pre-loading current month slots in background as soon as page loads
+  preloadMonthSlots();
+
   // 6. Custom Month Calendar Component with Dynamic Free Slot Fetching
   function loadCalComEmbed() {
     const container = document.getElementById('cal-embed-container');
@@ -310,21 +335,14 @@ document.addEventListener('DOMContentLoaded', () => {
       ];
 
       const monthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
-      let availableDates = [];
-      let slotsByDate = {};
+      let monthData = monthSlotsCache[monthStr];
 
-      try {
-        const monthRes = await fetch(`/api/available-slots?month=${monthStr}`);
-        if (monthRes.ok) {
-          const monthData = await monthRes.json();
-          if (monthData && monthData.availableDates) {
-            availableDates = monthData.availableDates;
-            slotsByDate = monthData.slotsByDate || {};
-          }
-        }
-      } catch (err) {
-        console.warn('Month slots fetch error:', err);
+      if (!monthData) {
+        monthData = await preloadMonthSlots(currentYear, currentMonth);
       }
+
+      const availableDates = monthData?.availableDates || [];
+      const slotsByDate = monthData?.slotsByDate || {};
 
       // Auto-set selectedDate to first available date in month if current selection is invalid or null
       if (availableDates.length > 0) {
