@@ -280,17 +280,58 @@ app.post('/api/track-capi', async (req, res) => {
   res.json({ success });
 });
 
-// Dynamic available slots endpoint
+// Dynamic available slots endpoint (Supports date=YYYY-MM-DD or month=YYYY-MM)
 app.get('/api/available-slots', async (req, res) => {
   const dateStr = req.query.date;
-  const defaultSlots = [
-    '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM',
-    '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM',
-    '04:00 PM', '04:30 PM', '05:00 PM'
-  ];
+  const monthStr = req.query.month; // e.g. "2026-08"
 
   const config = getLatestConfig();
   const calApiKey = config.CAL_API_KEY || process.env.CAL_API_KEY || '';
+
+  if (calApiKey && monthStr) {
+    try {
+      const parts = monthStr.split('-');
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10); // 1-indexed
+      const lastDay = new Date(year, month, 0).getDate();
+      const startTime = `${monthStr}-01T00:00:00.000Z`;
+      const endTime = `${monthStr}-${String(lastDay).padStart(2, '0')}T23:59:59.000Z`;
+
+      const calRes = await fetch(`https://api.cal.com/v2/slots/available?startTime=${startTime}&endTime=${endTime}&eventTypeId=6659881`, {
+        headers: {
+          'Authorization': `Bearer ${calApiKey}`,
+          'User-Agent': 'Sahajta-AI-Server/1.0 (Node.js)'
+        }
+      });
+
+      if (calRes.ok) {
+        const data = await calRes.json();
+        const slotsByDate = {};
+        const availableDates = [];
+
+        if (data && data.data && data.data.slots) {
+          for (const dateKey in data.data.slots) {
+            const list = data.data.slots[dateKey];
+            if (Array.isArray(list) && list.length > 0) {
+              const formattedTimes = [];
+              list.forEach(slot => {
+                const dt = new Date(slot.time || slot.startTime);
+                const timeFormatted = dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                if (!formattedTimes.includes(timeFormatted)) formattedTimes.push(timeFormatted);
+              });
+              if (formattedTimes.length > 0) {
+                slotsByDate[dateKey] = formattedTimes;
+                availableDates.push(dateKey);
+              }
+            }
+          }
+        }
+        return res.json({ month: monthStr, slotsByDate, availableDates });
+      }
+    } catch (err) {
+      console.warn('Cal API month slots error:', err.message);
+    }
+  }
 
   if (calApiKey && dateStr) {
     try {
@@ -304,8 +345,8 @@ app.get('/api/available-slots', async (req, res) => {
       });
       if (calRes.ok) {
         const data = await calRes.json();
+        const slotsList = [];
         if (data && data.data && data.data.slots) {
-          const slotsList = [];
           for (const k in data.data.slots) {
             data.data.slots[k].forEach(slot => {
               const dt = new Date(slot.time || slot.startTime);
@@ -313,14 +354,19 @@ app.get('/api/available-slots', async (req, res) => {
               if (!slotsList.includes(timeFormatted)) slotsList.push(timeFormatted);
             });
           }
-          return res.json({ date: dateStr, slots: slotsList });
         }
+        return res.json({ date: dateStr, slots: slotsList });
       }
     } catch (err) {
       console.warn('Cal API slot fetch error:', err.message);
     }
   }
 
+  const defaultSlots = [
+    '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM',
+    '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM',
+    '04:00 PM', '04:30 PM', '05:00 PM'
+  ];
   return res.json({ date: dateStr, slots: defaultSlots });
 });
 

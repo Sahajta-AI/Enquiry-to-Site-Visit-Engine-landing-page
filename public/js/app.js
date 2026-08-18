@@ -300,18 +300,42 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentYear = today.getFullYear();
     let currentMonth = today.getMonth(); // 0-indexed
 
-    // Default selection: tomorrow or first available business day
-    let selectedDate = new Date(today);
-    selectedDate.setDate(today.getDate() + 1);
-    if (selectedDate.getDay() === 0) selectedDate.setDate(selectedDate.getDate() + 1); // Skip Sunday
-
-    let selectedTimeStr = '11:00 AM';
+    let selectedDate = null;
+    let selectedTimeStr = null;
 
     async function fetchAndRenderCalendar() {
       const monthNames = [
         'January', 'February', 'March', 'April', 'May', 'June',
         'July', 'August', 'September', 'October', 'November', 'December'
       ];
+
+      const monthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+      let availableDates = [];
+      let slotsByDate = {};
+
+      try {
+        const monthRes = await fetch(`/api/available-slots?month=${monthStr}`);
+        if (monthRes.ok) {
+          const monthData = await monthRes.json();
+          if (monthData && monthData.availableDates) {
+            availableDates = monthData.availableDates;
+            slotsByDate = monthData.slotsByDate || {};
+          }
+        }
+      } catch (err) {
+        console.warn('Month slots fetch error:', err);
+      }
+
+      // Auto-set selectedDate to first available date in month if current selection is invalid or null
+      if (availableDates.length > 0) {
+        const currentSelectedStr = selectedDate ? `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}` : '';
+        if (!selectedDate || !availableDates.includes(currentSelectedStr)) {
+          const firstAvailParts = availableDates[0].split('-');
+          selectedDate = new Date(parseInt(firstAvailParts[0], 10), parseInt(firstAvailParts[1], 10) - 1, parseInt(firstAvailParts[2], 10));
+        }
+      } else {
+        selectedDate = null;
+      }
 
       // First day of current displayed month
       const firstDayOfMonth = new Date(currentYear, currentMonth, 1);
@@ -334,11 +358,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       for (let d = 1; d <= daysInMonth; d++) {
         const cellDate = new Date(currentYear, currentMonth, d);
+        const cellDateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         const isPast = cellDate < todayZero;
         const isSunday = cellDate.getDay() === 0;
-        const isDisabled = isPast || isSunday;
+        
+        // A day is ONLY available if it has open slots in availableDates
+        const hasSlots = availableDates.includes(cellDateStr);
+        const isDisabled = isPast || isSunday || !hasSlots;
 
-        const isSelected = (
+        const isSelected = selectedDate && (
           selectedDate.getFullYear() === currentYear &&
           selectedDate.getMonth() === currentMonth &&
           selectedDate.getDate() === d
@@ -346,14 +374,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         dayCells.push({
           dayNum: d,
-          cellDate: cellDate,
+          cellDateStr: cellDateStr,
           isCurrentMonth: true,
           isDisabled: isDisabled,
           isSelected: isSelected
         });
       }
 
-      // Next month leading days to complete grid cells
+      // Next month leading days
       const totalCells = dayCells.length > 35 ? 42 : 35;
       const remaining = totalCells - dayCells.length;
       for (let i = 1; i <= remaining; i++) {
@@ -369,35 +397,28 @@ document.addEventListener('DOMContentLoaded', () => {
           return `<div class="cal-day-cell other-month">${cell.dayNum}</div>`;
         }
         if (cell.isDisabled) {
-          return `<div class="cal-day-cell disabled">${cell.dayNum}</div>`;
+          return `<div class="cal-day-cell disabled" title="No available slots">${cell.dayNum}</div>`;
         }
         return `
-          <div class="cal-day-cell available ${cell.isSelected ? 'selected' : ''}" data-day="${cell.dayNum}">
+          <div class="cal-day-cell available ${cell.isSelected ? 'selected' : ''}" data-day="${cell.dayNum}" data-date="${cell.cellDateStr}">
             ${cell.dayNum}
           </div>
         `;
       }).join('');
 
-      // Fetch open slots for selected date from server
-      const formattedDateIso = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
-      let availableSlots = [
-        '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM',
-        '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM',
-        '04:00 PM', '04:30 PM', '05:00 PM'
-      ];
+      // Render Time Slots for Selected Date
+      let availableSlots = [];
+      const selectedDateKey = selectedDate ? `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}` : null;
+      if (selectedDateKey && slotsByDate[selectedDateKey]) {
+        availableSlots = slotsByDate[selectedDateKey];
+      }
 
-      try {
-        const slotRes = await fetch(`/api/available-slots?date=${formattedDateIso}`);
-        if (slotRes.ok) {
-          const slotData = await slotRes.json();
-          if (slotData && Array.isArray(slotData.slots)) {
-            availableSlots = slotData.slots;
-          }
+      if (availableSlots.length > 0) {
+        if (!selectedTimeStr || !availableSlots.includes(selectedTimeStr)) {
+          selectedTimeStr = availableSlots[0];
         }
-      } catch (err) {}
-
-      if (!availableSlots.includes(selectedTimeStr) && availableSlots.length > 0) {
-        selectedTimeStr = availableSlots[0];
+      } else {
+        selectedTimeStr = null;
       }
 
       const morningSlots = availableSlots.filter(s => s.toLowerCase().includes('am') || s.startsWith('10:') || s.startsWith('11:'));
@@ -409,22 +430,44 @@ document.addEventListener('DOMContentLoaded', () => {
         </button>
       `;
 
-      const morningBtnsHtml = morningSlots.length > 0
-        ? morningSlots.map(renderSlotBtn).join('')
-        : '<div style="font-size: 0.85rem; color: var(--text-muted); grid-column: span 2;">No morning slots available</div>';
-        
-      const afternoonBtnsHtml = afternoonSlots.length > 0
-        ? afternoonSlots.map(renderSlotBtn).join('')
-        : '<div style="font-size: 0.85rem; color: var(--text-muted); grid-column: span 2;">No afternoon slots available</div>';
+      let slotsHtml = '';
+      if (availableSlots.length > 0) {
+        if (morningSlots.length > 0) {
+          slotsHtml += `
+            <div class="time-section-label">Morning Slots</div>
+            <div class="time-slots-grid">
+              ${morningSlots.map(renderSlotBtn).join('')}
+            </div>
+          `;
+        }
+        if (afternoonSlots.length > 0) {
+          slotsHtml += `
+            <div class="time-section-label" style="${morningSlots.length > 0 ? 'margin-top: 0.75rem;' : ''}">Afternoon &amp; Evening</div>
+            <div class="time-slots-grid">
+              ${afternoonSlots.map(renderSlotBtn).join('')}
+            </div>
+          `;
+        }
+      } else {
+        slotsHtml = `
+          <div style="font-size: 0.88rem; color: var(--text-secondary); padding: 1.5rem 0; text-align: center; line-height: 1.5;">
+            No slots available on this date.<br><span style="font-size: 0.8rem; color: var(--text-muted);">Please select a highlighted date on the calendar.</span>
+          </div>
+        `;
+      }
 
-      const formattedSelectedDate = selectedDate.toLocaleDateString('en-US', {
+      const formattedSelectedDate = selectedDate ? selectedDate.toLocaleDateString('en-US', {
         weekday: 'short',
         month: 'short',
         day: 'numeric',
         year: 'numeric'
-      });
+      }) : 'No Date Selected';
 
-      const activeFullSlot = `${formattedSelectedDate} at ${selectedTimeStr} (${wizardState.timezone})`;
+      const activeFullSlot = (selectedDate && selectedTimeStr)
+        ? `${formattedSelectedDate} at ${selectedTimeStr} (${wizardState.timezone})`
+        : 'Please select an available date & time slot';
+
+      const isConfirmDisabled = !selectedDate || !selectedTimeStr;
 
       container.innerHTML = `
         <div class="month-calendar-wrapper">
@@ -448,15 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             <!-- Right Column: Time Slots -->
             <div class="time-slots-container">
-              <div class="time-section-label">Morning Slots</div>
-              <div class="time-slots-grid">
-                ${morningBtnsHtml}
-              </div>
-
-              <div class="time-section-label" style="margin-top: 0.75rem;">Afternoon &amp; Evening</div>
-              <div class="time-slots-grid">
-                ${afternoonBtnsHtml}
-              </div>
+              ${slotsHtml}
             </div>
           </div>
 
@@ -464,7 +499,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="selected-slot-badge">
               <span>Selected:</span> <span>${activeFullSlot}</span>
             </div>
-            <button type="button" class="btn-primary" id="btn-confirm-final-slot" style="width: 100%; min-height: 48px; font-size: 1rem;">
+            <button type="button" class="btn-primary" id="btn-confirm-final-slot" ${isConfirmDisabled ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''} style="width: 100%; min-height: 48px; font-size: 1rem;">
               <span>Confirm Strategy Call Slot →</span>
             </button>
           </div>
@@ -479,6 +514,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
           currentMonth--;
         }
+        selectedDate = null;
+        selectedTimeStr = null;
         fetchAndRenderCalendar();
       });
 
@@ -489,14 +526,17 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
           currentMonth++;
         }
+        selectedDate = null;
+        selectedTimeStr = null;
         fetchAndRenderCalendar();
       });
 
-      // Day Cell Click
+      // Day Cell Click (Only clickable if available)
       container.querySelectorAll('.cal-day-cell.available').forEach(cell => {
         cell.addEventListener('click', () => {
           const dayNum = parseInt(cell.dataset.day, 10);
           selectedDate = new Date(currentYear, currentMonth, dayNum);
+          selectedTimeStr = null;
           fetchAndRenderCalendar();
         });
       });
@@ -511,7 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Confirm CTA Click
       const btnConfirmFinal = container.querySelector('#btn-confirm-final-slot');
-      if (btnConfirmFinal) {
+      if (btnConfirmFinal && !isConfirmDisabled) {
         btnConfirmFinal.addEventListener('click', () => {
           btnConfirmFinal.disabled = true;
           btnConfirmFinal.textContent = 'Confirming Booking...';
