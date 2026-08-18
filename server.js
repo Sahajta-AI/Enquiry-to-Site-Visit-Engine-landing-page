@@ -133,6 +133,7 @@ function postJsonHttps(urlStr, bodyObj) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'User-Agent': 'Sahajta-AI-Server/1.0 (Node.js/CAPI)',
         'Content-Length': Buffer.byteLength(postData)
       },
       timeout: 10000
@@ -227,15 +228,23 @@ async function sendMetaCapiEvent(eventName, req, userData = {}, customData = {},
     let capiRes;
     try {
       capiRes = await postJsonHttps(graphUrl, payload);
-    } catch (err) {
-      // Fallback to fetch if available
-      const fetchRes = await fetch(graphUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await fetchRes.json();
-      capiRes = { status: fetchRes.status, data: data };
+    } catch (httpsErr) {
+      console.warn(`⚠️ [Meta CAPI HTTPS Notice]: postJsonHttps error (${httpsErr.message}), trying fetch fallback...`);
+      try {
+        const fetchRes = await fetch(graphUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'Sahajta-AI-Server/1.0 (Node.js/CAPI)'
+          },
+          body: JSON.stringify(payload)
+        });
+        const data = await fetchRes.json();
+        capiRes = { status: fetchRes.status, data: data };
+      } catch (fetchErr) {
+        console.error(`❌ [Meta CAPI Error]: Failed to send "${eventName}". HTTPS err: ${httpsErr.message} | Fetch err: ${fetchErr.message}`);
+        return false;
+      }
     }
 
     if (capiRes.status >= 200 && capiRes.status < 300) {
