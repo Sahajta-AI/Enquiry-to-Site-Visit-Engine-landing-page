@@ -175,6 +175,10 @@ async function sendMetaCapiEvent(eventName, req, userData = {}, customData = {},
       ]
     };
 
+    if (process.env.META_TEST_EVENT_CODE) {
+      payload.test_event_code = process.env.META_TEST_EVENT_CODE;
+    }
+
     const graphUrl = `https://graph.facebook.net/v20.0/${pixelId}/events?access_token=${apiToken}`;
     const capiRes = await fetch(graphUrl, {
       method: 'POST',
