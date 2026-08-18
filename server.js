@@ -406,24 +406,24 @@ UTM Campaign:         ${utm_campaign || 'Direct / None'}
     console.log('ℹ️ [Odoo CRM]: No ODOO_API_KEY set in .env. Skipping Odoo sync.');
   }
 
-  // Direct Backend Meta Conversions API (CAPI) Dispatch
+  // Direct Backend Meta Conversions API (CAPI) Dispatch (Awaited for Vercel serverless completion guarantee)
   const capiUserData = { name, email, whatsapp_number, company };
   const baseEventId = req.body.event_id || `lead_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   
-  sendMetaCapiEvent('Lead', req, capiUserData, {
-    content_name: 'Real Estate Strategy Call Lead',
-    company: company
-  }, baseEventId).catch(err => {
-    console.error('⚠️ [Meta CAPI Lead Dispatch Error]:', err.message);
-  });
+  try {
+    await sendMetaCapiEvent('Lead', req, capiUserData, {
+      content_name: 'Real Estate Strategy Call Lead',
+      company: company
+    }, baseEventId);
 
-  if (bookedSlot && bookedSlot !== 'Pending calendar confirmation') {
-    sendMetaCapiEvent('Schedule', req, capiUserData, {
-      content_name: 'Strategy Call Slot Confirmed',
-      booked_slot: bookedSlot
-    }, `sched_${baseEventId}`).catch(err => {
-      console.error('⚠️ [Meta CAPI Schedule Dispatch Error]:', err.message);
-    });
+    if (bookedSlot && bookedSlot !== 'Pending calendar confirmation') {
+      await sendMetaCapiEvent('Schedule', req, capiUserData, {
+        content_name: 'Strategy Call Slot Confirmed',
+        booked_slot: bookedSlot
+      }, `sched_${baseEventId}`);
+    }
+  } catch (err) {
+    console.error('⚠️ [Meta CAPI Dispatch Error]:', err.message);
   }
 
   return res.status(200).json({
