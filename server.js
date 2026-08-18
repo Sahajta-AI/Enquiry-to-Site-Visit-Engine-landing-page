@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 
 // Load environment variables from .env if present
 const envPath = path.join(__dirname, '.env');
@@ -101,8 +102,98 @@ function getLatestConfig() {
     ODOO_USER: process.env.ODOO_USER || 'shubhangsethi@gmail.com',
     ODOO_API_KEY: process.env.ODOO_API_KEY || '',
     CALENDAR_EMBED_URL: process.env.CALENDAR_EMBED_URL || 'https://cal.com/shubhang-sethi/enquiry-to-site-visit-engine',
-    META_PIXEL_ID: process.env.META_PIXEL_ID || ''
+    META_PIXEL_ID: process.env.META_PIXEL_ID || '',
+    META_CAPI_TOKEN: process.env.META_CAPI_TOKEN || ''
   };
+}
+
+// SHA-256 Hashing Helpers for Meta CAPI Event Match Quality (EMQ > 8.5)
+function hashSha256(value) {
+  if (!value) return undefined;
+  return crypto.createHash('sha256').update(String(value).trim().toLowerCase()).digest('hex');
+}
+
+function normalizePhone(phone) {
+  if (!phone) return undefined;
+  const digits = String(phone).replace(/\D/g, '');
+  return digits.length >= 7 ? digits : undefined;
+}
+
+// Direct Backend Meta Conversions API (CAPI) Engine
+async function sendMetaCapiEvent(eventName, req, userData = {}, customData = {}, eventId = null) {
+  const config = getLatestConfig();
+  const pixelId = config.META_PIXEL_ID;
+  const apiToken = process.env.META_CAPI_TOKEN || config.META_CAPI_TOKEN || '';
+
+  if (!pixelId || !apiToken) {
+    console.log(`ℹ️ [Meta CAPI Notice]: Skipping CAPI "${eventName}" (META_PIXEL_ID or META_CAPI_TOKEN not configured)`);
+    return false;
+  }
+
+  try {
+    // Extract Client IP and User Agent for high Meta Event Match Quality
+    const rawIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '';
+    const clientIp = rawIp.split(',')[0].trim();
+    const clientUserAgent = req.headers['user-agent'] || '';
+
+    // Extract Meta Cookies (_fbp, _fbc) from request
+    const cookies = req.headers.cookie || '';
+    const fbpMatch = cookies.match(/_fbp=([^;]+)/);
+    const fbcMatch = cookies.match(/_fbc=([^;]+)/);
+    const fbp = fbpMatch ? fbpMatch[1] : undefined;
+    const fbc = fbcMatch ? fbcMatch[1] : undefined;
+
+    // Parse First & Last Name
+    let firstName = userData.name || '';
+    let lastName = '';
+    if (userData.name && userData.name.trim().includes(' ')) {
+      const parts = userData.name.trim().split(/\s+/);
+      firstName = parts[0];
+      lastName = parts.slice(1).join(' ');
+    }
+
+    const payload = {
+      data: [
+        {
+          event_name: eventName,
+          event_time: Math.floor(Date.now() / 1000),
+          event_id: eventId || `capi_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+          event_source_url: req.headers.referer || 'https://sahajta-landing-page-brown.vercel.app/',
+          action_source: 'website',
+          user_data: {
+            em: userData.email ? [hashSha256(userData.email)] : undefined,
+            ph: (userData.whatsapp_number || userData.phone) ? [hashSha256(normalizePhone(userData.whatsapp_number || userData.phone))] : undefined,
+            fn: firstName ? [hashSha256(firstName)] : undefined,
+            ln: lastName ? [hashSha256(lastName)] : undefined,
+            client_ip_address: clientIp || undefined,
+            client_user_agent: clientUserAgent || undefined,
+            fbp: fbp || undefined,
+            fbc: fbc || undefined
+          },
+          custom_data: customData
+        }
+      ]
+    };
+
+    const graphUrl = `https://graph.facebook.net/v20.0/${pixelId}/events?access_token=${apiToken}`;
+    const capiRes = await fetch(graphUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const capiData = await capiRes.json();
+    if (capiRes.ok) {
+      console.log(`✅ [Meta CAPI Success]: Event "${eventName}" dispatched to Meta Graph API. Received: ${capiData.events_received || 1}`);
+      return true;
+    } else {
+      console.warn(`⚠️ [Meta CAPI Warning]: Meta Graph API returned error:`, capiData.error || capiData);
+      return false;
+    }
+  } catch (err) {
+    console.error(`❌ [Meta CAPI Error]: Failed to send "${eventName}":`, err.message);
+    return false;
+  }
 }
 
 // Config endpoint for client runtime variables
@@ -113,6 +204,15 @@ app.get('/api/config', (req, res) => {
     metaPixelId: config.META_PIXEL_ID,
     whatsappNumber: config.WHATSAPP_NUMBER
   });
+});
+
+// Client CAPI Event Tracking Route
+app.post('/api/track-capi', async (req, res) => {
+  const { eventName, userData, customData, eventId } = req.body;
+  if (!eventName) return res.status(400).json({ success: false, error: 'Missing eventName' });
+
+  const success = await sendMetaCapiEvent(eventName, req, userData || {}, customData || {}, eventId || null);
+  res.json({ success });
 });
 
 // Dynamic available slots endpoint
@@ -249,6 +349,26 @@ UTM Campaign:         ${utm_campaign || 'Direct / None'}
     });
   } else {
     console.log('ℹ️ [Odoo CRM]: No ODOO_API_KEY set in .env. Skipping Odoo sync.');
+  }
+
+  // Direct Backend Meta Conversions API (CAPI) Dispatch
+  const capiUserData = { name, email, whatsapp_number, company };
+  const baseEventId = req.body.event_id || `lead_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  
+  sendMetaCapiEvent('Lead', req, capiUserData, {
+    content_name: 'Real Estate Strategy Call Lead',
+    company: company
+  }, baseEventId).catch(err => {
+    console.error('⚠️ [Meta CAPI Lead Dispatch Error]:', err.message);
+  });
+
+  if (bookedSlot && bookedSlot !== 'Pending calendar confirmation') {
+    sendMetaCapiEvent('Schedule', req, capiUserData, {
+      content_name: 'Strategy Call Slot Confirmed',
+      booked_slot: bookedSlot
+    }, `sched_${baseEventId}`).catch(err => {
+      console.error('⚠️ [Meta CAPI Schedule Dispatch Error]:', err.message);
+    });
   }
 
   return res.status(200).json({
