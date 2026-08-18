@@ -584,23 +584,25 @@ a:hover {
 }
 
 /* Ongoing Partner Assurance Card */
-/* Video Testimonials Grid & Cards (Prominent 2-Column Layout) */
+/* Video Testimonials Grid & Cards (Symmetrical Responsive Layout) */
 .video-testimonials-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 2rem;
-  max-width: 1080px;
+  max-width: 1140px;
   margin: 2.5rem auto 0 auto;
 }
 
 @media (max-width: 768px) {
   .video-testimonials-grid {
-    grid-template-columns: 1fr;
     gap: 1.5rem;
   }
 }
 
 .video-testimonial-card {
+  flex: 1 1 320px;
+  max-width: 355px;
   background: var(--bg-card);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
