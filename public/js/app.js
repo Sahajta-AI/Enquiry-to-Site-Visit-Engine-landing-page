@@ -296,14 +296,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const targetYear = year || today.getFullYear();
     const targetMonth = month !== undefined ? month : today.getMonth();
     const monthStr = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}`;
-    if (monthSlotsCache[monthStr]) return monthSlotsCache[monthStr];
+    const tz = wizardState.timezone || 'Asia/Kolkata';
+    const cacheKey = `${monthStr}_${tz}`;
+    if (monthSlotsCache[cacheKey]) return monthSlotsCache[cacheKey];
 
     try {
-      const monthRes = await fetch(`/api/available-slots?month=${monthStr}`);
+      const monthRes = await fetch(`/api/available-slots?month=${monthStr}&timeZone=${encodeURIComponent(tz)}`);
       if (monthRes.ok) {
         const monthData = await monthRes.json();
         if (monthData && monthData.availableDates) {
-          monthSlotsCache[monthStr] = monthData;
+          monthSlotsCache[cacheKey] = monthData;
           return monthData;
         }
       }
@@ -335,7 +337,9 @@ document.addEventListener('DOMContentLoaded', () => {
       ];
 
       const monthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
-      let monthData = monthSlotsCache[monthStr];
+      const tz = wizardState.timezone || 'Asia/Kolkata';
+      const cacheKey = `${monthStr}_${tz}`;
+      let monthData = monthSlotsCache[cacheKey];
 
       if (!monthData) {
         monthData = await preloadMonthSlots(currentYear, currentMonth);

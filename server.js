@@ -284,6 +284,7 @@ app.post('/api/track-capi', async (req, res) => {
 app.get('/api/available-slots', async (req, res) => {
   const dateStr = req.query.date;
   const monthStr = req.query.month; // e.g. "2026-08"
+  const userTimeZone = req.query.timeZone || 'Asia/Kolkata';
 
   const config = getLatestConfig();
   const calApiKey = config.CAL_API_KEY || process.env.CAL_API_KEY || '';
@@ -297,7 +298,7 @@ app.get('/api/available-slots', async (req, res) => {
       const startTime = `${monthStr}-01T00:00:00.000Z`;
       const endTime = `${monthStr}-${String(lastDay).padStart(2, '0')}T23:59:59.000Z`;
 
-      const calRes = await fetch(`https://api.cal.com/v2/slots/available?startTime=${startTime}&endTime=${endTime}&eventTypeId=6659881`, {
+      const calRes = await fetch(`https://api.cal.com/v2/slots/available?startTime=${startTime}&endTime=${endTime}&eventTypeId=6659881&timeZone=${encodeURIComponent(userTimeZone)}`, {
         headers: {
           'Authorization': `Bearer ${calApiKey}`,
           'User-Agent': 'Sahajta-AI-Server/1.0 (Node.js)'
@@ -316,7 +317,11 @@ app.get('/api/available-slots', async (req, res) => {
               const formattedTimes = [];
               list.forEach(slot => {
                 const dt = new Date(slot.time || slot.startTime);
-                const timeFormatted = dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                const timeFormatted = dt.toLocaleTimeString('en-US', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  timeZone: userTimeZone
+                });
                 if (!formattedTimes.includes(timeFormatted)) formattedTimes.push(timeFormatted);
               });
               if (formattedTimes.length > 0) {
@@ -337,7 +342,7 @@ app.get('/api/available-slots', async (req, res) => {
     try {
       const startTime = `${dateStr}T00:00:00.000Z`;
       const endTime = `${dateStr}T23:59:59.000Z`;
-      const calRes = await fetch(`https://api.cal.com/v2/slots/available?startTime=${startTime}&endTime=${endTime}&eventTypeId=6659881`, {
+      const calRes = await fetch(`https://api.cal.com/v2/slots/available?startTime=${startTime}&endTime=${endTime}&eventTypeId=6659881&timeZone=${encodeURIComponent(userTimeZone)}`, {
         headers: {
           'Authorization': `Bearer ${calApiKey}`,
           'User-Agent': 'Sahajta-AI-Server/1.0 (Node.js)'
@@ -350,7 +355,11 @@ app.get('/api/available-slots', async (req, res) => {
           for (const k in data.data.slots) {
             data.data.slots[k].forEach(slot => {
               const dt = new Date(slot.time || slot.startTime);
-              const timeFormatted = dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+              const timeFormatted = dt.toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: userTimeZone
+              });
               if (!slotsList.includes(timeFormatted)) slotsList.push(timeFormatted);
             });
           }
@@ -362,12 +371,7 @@ app.get('/api/available-slots', async (req, res) => {
     }
   }
 
-  const defaultSlots = [
-    '10:00 AM', '10:30 AM', '11:00 AM', '11:30 AM',
-    '02:00 PM', '02:30 PM', '03:00 PM', '03:30 PM',
-    '04:00 PM', '04:30 PM', '05:00 PM'
-  ];
-  return res.json({ date: dateStr, slots: defaultSlots });
+  return res.json({ date: dateStr, slots: [], slotsByDate: {}, availableDates: [] });
 });
 
 // API Route: Submit Lead Intake & Dispatch Email
