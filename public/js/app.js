@@ -822,7 +822,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function getGoogleCalendarUrl(startDate, title, description, location) {
-    const endDate = new Date(startDate.getTime() + 15 * 60 * 1000);
+    const endDate = new Date(startDate.getTime() + 45 * 60 * 1000); // 45 minutes meeting
     const dates = `${formatUtcForCal(startDate)}/${formatUtcForCal(endDate)}`;
     const baseUrl = 'https://calendar.google.com/calendar/render?action=TEMPLATE';
     const params = new URLSearchParams({
@@ -835,7 +835,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function downloadIcsFile(startDate, title, description, location) {
-    const endDate = new Date(startDate.getTime() + 15 * 60 * 1000);
+    const endDate = new Date(startDate.getTime() + 45 * 60 * 1000); // 45 minutes meeting
     const now = new Date();
     
     const icsContent = [
@@ -866,30 +866,37 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.removeChild(link);
   }
 
-  if (btnAddGoogleCal) {
-    btnAddGoogleCal.addEventListener('click', (e) => {
+  // Global Document Event Delegation for Calendar Buttons (Guarantees click handling everywhere)
+  document.addEventListener('click', (e) => {
+    const googleBtn = e.target.closest('#btn-add-google-cal');
+    if (googleBtn) {
       e.preventDefault();
+      e.stopPropagation();
+      console.log('📅 [Google Cal Clicked]');
       const startDate = getStartDateForBooking();
       const title = 'Strategy Call: Sahajta AI Enquiry-to-Site-Visit Engine';
-      const description = 'Strategy call with Sahajta AI team to map your residential lead intake, WhatsApp qualification, and site visit booking engine.';
+      const description = '45-minute Strategy call with Sahajta AI team to map your residential lead intake, WhatsApp qualification, and site visit booking engine.';
       const location = 'Google Meet / Phone Call (Sahajta AI Strategy Team)';
       const url = getGoogleCalendarUrl(startDate, title, description, location);
       window.open(url, '_blank');
       trackMetaEvent('AddToGoogleCalendarClick');
-    });
-  }
+      return;
+    }
 
-  if (btnAddAppleOutlook) {
-    btnAddAppleOutlook.addEventListener('click', (e) => {
+    const appleBtn = e.target.closest('#btn-add-apple-outlook');
+    if (appleBtn) {
       e.preventDefault();
+      e.stopPropagation();
+      console.log('✉️ [Apple/Outlook Cal Clicked]');
       const startDate = getStartDateForBooking();
       const title = 'Strategy Call: Sahajta AI Enquiry-to-Site-Visit Engine';
-      const description = 'Strategy call with Sahajta AI team to map your residential lead intake, WhatsApp qualification, and site visit booking engine.';
+      const description = '45-minute Strategy call with Sahajta AI team to map your residential lead intake, WhatsApp qualification, and site visit booking engine.';
       const location = 'Google Meet / Phone Call (Sahajta AI Strategy Team)';
       downloadIcsFile(startDate, title, description, location);
       trackMetaEvent('AddToAppleOutlookClick');
-    });
-  }
+      return;
+    }
+  });
 
   if (btnWhatsappConfirm) {
     btnWhatsappConfirm.addEventListener('click', () => {
