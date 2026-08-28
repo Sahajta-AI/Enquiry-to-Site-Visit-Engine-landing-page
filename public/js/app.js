@@ -675,6 +675,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const extractedDate = extractCalComDate(data);
         if (extractedDate) {
+          wizardState.bookedDateObj = extractedDate;
           const formatted = formatSlotString(extractedDate);
           handleSlotConfirmation(formatted);
         } else {
@@ -695,6 +696,7 @@ document.addEventListener('DOMContentLoaded', () => {
           console.log('🎉 [Cal.com SDK Callback]:', e);
           const extractedDate = extractCalComDate(e);
           if (extractedDate) {
+            wizardState.bookedDateObj = extractedDate;
             handleSlotConfirmation(formatSlotString(extractedDate));
           } else {
             handleSlotConfirmation();
@@ -776,6 +778,119 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // 7. Interactive Step 1 & Step 2 Confirmation Handlers in Thank-You State
+  const btnAddGoogleCal = document.getElementById('btn-add-google-cal');
+  const btnAddAppleOutlook = document.getElementById('btn-add-apple-outlook');
+
+  function getStartDateForBooking() {
+    if (wizardState.bookedDateObj && !isNaN(wizardState.bookedDateObj.getTime())) {
+      return wizardState.bookedDateObj;
+    }
+    
+    // Parse from ty-booked-slot element if present
+    const slotEl = document.getElementById('ty-booked-slot');
+    const slotText = slotEl ? slotEl.textContent : (wizardState.bookedSlot || '');
+    if (slotText && slotText.includes(' at ')) {
+      try {
+        const parts = slotText.split(' at ');
+        const datePart = parts[0].replace(/^[^,]+,\s*/, '').trim();
+        const timePart = parts[1].split('(')[0].trim();
+        const cleanStr = `${datePart} ${timePart}`;
+        const parsed = new Date(cleanStr);
+        if (!isNaN(parsed.getTime())) {
+          return parsed;
+        }
+      } catch (err) {
+        console.warn('Could not parse slot date string:', err);
+      }
+    }
+
+    // Default fallback: Tomorrow at 10:00 AM
+    const fallback = new Date();
+    fallback.setDate(fallback.getDate() + 1);
+    fallback.setHours(10, 0, 0, 0);
+    return fallback;
+  }
+
+  function formatUtcForCal(date) {
+    const yyyy = date.getUTCFullYear();
+    const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(date.getUTCDate()).padStart(2, '0');
+    const hh = String(date.getUTCHours()).padStart(2, '0');
+    const min = String(date.getUTCMinutes()).padStart(2, '0');
+    const ss = String(date.getUTCSeconds()).padStart(2, '0');
+    return `${yyyy}${mm}${dd}T${hh}${min}${ss}Z`;
+  }
+
+  function getGoogleCalendarUrl(startDate, title, description, location) {
+    const endDate = new Date(startDate.getTime() + 15 * 60 * 1000);
+    const dates = `${formatUtcForCal(startDate)}/${formatUtcForCal(endDate)}`;
+    const baseUrl = 'https://calendar.google.com/calendar/render?action=TEMPLATE';
+    const params = new URLSearchParams({
+      text: title,
+      details: description,
+      location: location,
+      dates: dates
+    });
+    return `${baseUrl}&${params.toString()}`;
+  }
+
+  function downloadIcsFile(startDate, title, description, location) {
+    const endDate = new Date(startDate.getTime() + 15 * 60 * 1000);
+    const now = new Date();
+    
+    const icsContent = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Sahajta AI//Strategy Call//EN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      `UID:sahajta-strategy-call-${Date.now()}@sahajta.com`,
+      `DTSTAMP:${formatUtcForCal(now)}`,
+      `DTSTART:${formatUtcForCal(startDate)}`,
+      `DTEND:${formatUtcForCal(endDate)}`,
+      `SUMMARY:${title}`,
+      `DESCRIPTION:${description}`,
+      `LOCATION:${location}`,
+      'STATUS:CONFIRMED',
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\r\n');
+
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = window.URL.createObjectURL(blob);
+    link.setAttribute('download', 'Sahajta-Strategy-Call.ics');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  if (btnAddGoogleCal) {
+    btnAddGoogleCal.addEventListener('click', (e) => {
+      e.preventDefault();
+      const startDate = getStartDateForBooking();
+      const title = 'Strategy Call: Sahajta AI Enquiry-to-Site-Visit Engine';
+      const description = 'Strategy call with Sahajta AI team to map your residential lead intake, WhatsApp qualification, and site visit booking engine.';
+      const location = 'Google Meet / Phone Call (Sahajta AI Strategy Team)';
+      const url = getGoogleCalendarUrl(startDate, title, description, location);
+      window.open(url, '_blank');
+      trackMetaEvent('AddToGoogleCalendarClick');
+    });
+  }
+
+  if (btnAddAppleOutlook) {
+    btnAddAppleOutlook.addEventListener('click', (e) => {
+      e.preventDefault();
+      const startDate = getStartDateForBooking();
+      const title = 'Strategy Call: Sahajta AI Enquiry-to-Site-Visit Engine';
+      const description = 'Strategy call with Sahajta AI team to map your residential lead intake, WhatsApp qualification, and site visit booking engine.';
+      const location = 'Google Meet / Phone Call (Sahajta AI Strategy Team)';
+      downloadIcsFile(startDate, title, description, location);
+      trackMetaEvent('AddToAppleOutlookClick');
+    });
+  }
+
   if (btnWhatsappConfirm) {
     btnWhatsappConfirm.addEventListener('click', () => {
       const step1Card = document.getElementById('precall-step-1-card');
