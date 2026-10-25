@@ -1040,6 +1040,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   updateStickyButton();
 
+  // Logos scroll back to the top of the page instead of reloading it
+  document.querySelectorAll('.js-to-top').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+
   // Initial Meta Pixel PageView trigger
   trackMetaEvent('PageView');
 });
