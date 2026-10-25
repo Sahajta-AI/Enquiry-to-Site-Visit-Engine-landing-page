@@ -1,10 +1,10 @@
 /**
  * SAHAJTA AI — ENQUIRY-TO-SITE-VISIT ENGINE
- * Client-side Intake Wizard, Meta Pixel Tracker & Modal Manager
+ * Client-side booking form, Meta Pixel tracker and page behaviour
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-  // State variables
+  // State variables (this whole object is posted to /api/submit-lead: do not add keys)
   const wizardState = {
     currentStep: 1,
     q1_situation: '',
@@ -45,28 +45,33 @@ document.addEventListener('DOMContentLoaded', () => {
   const modalBackdrop = document.getElementById('intake-modal');
   const modalCloseBtn = document.getElementById('modal-close-btn');
   const ctaButtons = document.querySelectorAll('.js-open-modal');
-  
+
   // Wizard steps
   const wizardStep1 = document.getElementById('wizard-step-1');
   const wizardStep2 = document.getElementById('wizard-step-2');
   const wizardStep3 = document.getElementById('wizard-step-3');
   const wizardStep4 = document.getElementById('wizard-step-4');
   const wizardThankYou = document.getElementById('wizard-thank-you');
-  
+
   const stepPill = document.getElementById('wizard-step-pill');
   const progressFill = document.getElementById('wizard-progress-fill');
-  
-  // Back & Next Buttons
-  const btnStep1Next = document.getElementById('btn-step-1-next');
+  const modalBody = modalBackdrop.querySelector('.modal-body');
+
+  // Back buttons
   const btnStep2Back = document.getElementById('btn-step-2-back');
-  const btnStep2Next = document.getElementById('btn-step-2-next');
   const btnStep3Back = document.getElementById('btn-step-3-back');
+  const btnStep4Back = document.getElementById('btn-step-4-back');
   const btnStep3Submit = document.getElementById('btn-step-3-submit');
-  const btnSimulateBooking = document.getElementById('btn-simulate-booking');
-  
-  // WhatsApp & Pre-call Video buttons
+
+  // WhatsApp & Pre-call Video buttons (thank-you screen)
   const btnWhatsappConfirm = document.getElementById('btn-whatsapp-confirm');
   const precallVideoPlayBtn = document.getElementById('precall-video-play-btn');
+
+  // Words for the form live in data attributes on the modal
+  const msg = (key) => modalBackdrop.dataset[key] || '';
+
+  // Events that must fire once, even after Back or closing and reopening the panel
+  const firedOnce = {};
 
   // Helper: Meta Pixel Tracker Safe Trigger (Standard + Custom Funnel Tracking)
   function trackMetaEvent(eventName, params = {}, isCustom = false) {
@@ -84,22 +89,36 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // 1. Modal Toggle Handlers
-  function openModal() {
+  function trackOnce(eventName, params) {
+    if (firedOnce[eventName]) return;
+    firedOnce[eventName] = true;
+    trackMetaEvent(eventName, params);
+  }
+
+  // 1. Modal toggle: reopening returns to the same screen
+  let lastOpener = null;
+
+  function openModal(opener) {
+    lastOpener = opener || document.activeElement;
     modalBackdrop.classList.add('active');
     document.body.classList.add('modal-open');
-    goToStep(1);
+    goToStep(wizardState.currentStep || 1);
+    if (modalCloseBtn) modalCloseBtn.focus({ preventScroll: true });
   }
 
   function closeModal() {
     modalBackdrop.classList.remove('active');
     document.body.classList.remove('modal-open');
+    if (lastOpener && typeof lastOpener.focus === 'function') {
+      lastOpener.focus({ preventScroll: true });
+    }
+    updateStickyButton();
   }
 
   ctaButtons.forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
-      openModal();
+      openModal(btn.closest('#sticky-cta') ? null : btn);
     });
   });
 
@@ -119,174 +138,213 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 2. Wizard Navigation Engine
+  // 2. Wizard navigation
+  const progressByStep = { 1: '25%', 2: '50%', 3: '75%', 4: '100%', 5: '100%' };
+
   function goToStep(stepNumber) {
     wizardState.currentStep = stepNumber;
-    
-    // Hide all steps
+
     [wizardStep1, wizardStep2, wizardStep3, wizardStep4, wizardThankYou].forEach(el => {
       if (el) el.classList.remove('active');
     });
 
-    if (stepNumber === 1) {
-      wizardStep1.classList.add('active');
-      stepPill.textContent = 'Step 1 of 4 — Project Status';
-      progressFill.style.width = '25%';
-    } else if (stepNumber === 2) {
-      wizardStep2.classList.add('active');
-      stepPill.textContent = 'Step 2 of 4 — Urgency & Timeline';
-      progressFill.style.width = '50%';
-    } else if (stepNumber === 3) {
-      wizardStep3.classList.add('active');
-      stepPill.textContent = 'Step 3 of 4 — Contact Details';
-      progressFill.style.width = '75%';
-      // Track InitiateCheckout ONCE when user reaches Contact Details step
-      trackMetaEvent('InitiateCheckout', { content_name: 'IntakeCompleted' });
+    const stepEl = { 1: wizardStep1, 2: wizardStep2, 3: wizardStep3, 4: wizardStep4, 5: wizardThankYou }[stepNumber];
+    if (stepEl) stepEl.classList.add('active');
+
+    progressFill.style.width = progressByStep[stepNumber] || '25%';
+    stepPill.textContent = stepNumber === 5
+      ? '✓ Booking Confirmed'
+      : (stepEl && stepEl.dataset.progressLabel) || '';
+    if (modalBody) modalBody.scrollTop = 0;
+
+    if (stepNumber === 3) {
+      // Track InitiateCheckout once, when the visitor reaches the contact details step
+      trackOnce('InitiateCheckout', { content_name: 'IntakeCompleted' });
+      // Start loading open times now so they show at once on the next screen
+      preloadMonthSlots();
     } else if (stepNumber === 4) {
-      wizardStep4.classList.add('active');
-      stepPill.textContent = 'Step 4 of 4 — Select Strategy Call Slot';
-      progressFill.style.width = '100%';
-    } else if (stepNumber === 5) {
-      wizardThankYou.classList.add('active');
-      stepPill.textContent = '✓ Booking Confirmed';
-      progressFill.style.width = '100%';
+      renderTimeZoneLine();
+      loadCalComEmbed();
     }
   }
 
-  // 3. Q1 Option Selection (Step 1)
-  const q1Options = document.querySelectorAll('.js-q1-option');
-  q1Options.forEach(card => {
-    card.addEventListener('click', () => {
-      q1Options.forEach(c => c.classList.remove('selected'));
-      card.classList.add('selected');
-      const value = card.dataset.value;
-      wizardState.q1_situation = value;
-      btnStep1Next.disabled = false;
-
-      // Auto-advance after brief smooth feedback
-      setTimeout(() => {
-        goToStep(2);
-      }, 250);
-    });
-  });
-
-  if (btnStep1Next) {
-    btnStep1Next.addEventListener('click', () => {
-      if (wizardState.q1_situation) goToStep(2);
+  // 3. Question 1 and 2: the whole box is tappable, the next screen shows after a short pause
+  function bindOptionGroup(selector, field, nextStep) {
+    const cards = document.querySelectorAll(selector);
+    cards.forEach(card => {
+      card.addEventListener('click', () => {
+        cards.forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        wizardState[field] = card.dataset.value;
+        setTimeout(() => goToStep(nextStep), 250);
+      });
     });
   }
 
-  // 4. Q2 Option Selection (Step 2)
-  const q2Options = document.querySelectorAll('.js-q2-option');
-  q2Options.forEach(card => {
-    card.addEventListener('click', () => {
-      q2Options.forEach(c => c.classList.remove('selected'));
-      card.classList.add('selected');
-      const value = card.dataset.value;
-      wizardState.q2_urgency = value;
-      btnStep2Next.disabled = false;
+  bindOptionGroup('.js-q1-option', 'q1_situation', 2);
+  bindOptionGroup('.js-q2-option', 'q2_urgency', 3);
 
-      // Auto-advance after brief smooth feedback
-      setTimeout(() => {
-        goToStep(3);
-      }, 250);
-    });
-  });
+  if (btnStep2Back) btnStep2Back.addEventListener('click', () => goToStep(1));
+  if (btnStep3Back) btnStep3Back.addEventListener('click', () => goToStep(2));
+  if (btnStep4Back) btnStep4Back.addEventListener('click', () => goToStep(3));
 
-  if (btnStep2Back) {
-    btnStep2Back.addEventListener('click', () => goToStep(1));
-  }
-  if (btnStep2Next) {
-    btnStep2Next.addEventListener('click', () => {
-      if (wizardState.q2_urgency) goToStep(3);
-    });
-  }
-
-  // 5. Contact Form Handler (Step 3)
-  if (btnStep3Back) {
-    btnStep3Back.addEventListener('click', () => goToStep(2));
-  }
-
+  // 4. Contact details
   const contactForm = document.getElementById('intake-contact-form');
+  const nameInput = document.getElementById('field-name');
+  const companyInput = document.getElementById('field-company');
+  const emailInput = document.getElementById('field-email');
+  const phoneInput = document.getElementById('field-whatsapp');
+  const phoneIntlInput = document.getElementById('field-whatsapp-intl');
+  const phoneIndiaRow = document.getElementById('phone-india');
+  const toggleIntl = document.getElementById('toggle-intl');
+  const toggleIndia = document.getElementById('toggle-india');
+  const errWhatsapp = document.getElementById('err-whatsapp');
+  const errWhatsappDefault = errWhatsapp ? errWhatsapp.textContent : '';
+  let phoneIsInternational = false;
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  // Indian number: keep only digits; drop a leading 91 or 0 when more than 10 are left; keep the first 10
+  function cleanIndianDigits(raw) {
+    let digits = String(raw).replace(/\D/g, '');
+    if (digits.length > 10 && (digits.startsWith('91') || digits.startsWith('0'))) {
+      digits = digits.startsWith('91') ? digits.slice(2) : digits.slice(1);
+    }
+    return digits.slice(0, 10);
+  }
+
+  function cleanIntlNumber(raw) {
+    const trimmed = String(raw).trim();
+    const digits = trimmed.replace(/\D/g, '').slice(0, 15);
+    return (trimmed.startsWith('+') ? '+' : '') + digits;
+  }
+
+  const validators = {
+    name: () => nameInput.value.trim().length > 0,
+    company: () => companyInput.value.trim().length > 0,
+    email: () => emailRegex.test(emailInput.value.trim()),
+    whatsapp: () => {
+      if (phoneIsInternational) {
+        const v = phoneIntlInput.value.trim();
+        return /^\+\d{8,15}$/.test(v);
+      }
+      return /^[6-9]\d{9}$/.test(phoneInput.value);
+    }
+  };
+
+  const fieldGroups = {
+    name: nameInput.closest('.form-group'),
+    company: companyInput.closest('.form-group'),
+    email: emailInput.closest('.form-group'),
+    whatsapp: document.getElementById('group-whatsapp')
+  };
+
+  const fieldInputs = {
+    name: nameInput,
+    company: companyInput,
+    email: emailInput,
+    whatsapp: () => (phoneIsInternational ? phoneIntlInput : phoneInput)
+  };
+
+  function validateField(key) {
+    const ok = validators[key]();
+    fieldGroups[key].classList.toggle('has-error', !ok);
+    return ok;
+  }
+
+  function focusField(key) {
+    const el = typeof fieldInputs[key] === 'function' ? fieldInputs[key]() : fieldInputs[key];
+    if (el) el.focus();
+  }
+
+  function setPhoneMode(international) {
+    phoneIsInternational = international;
+    phoneIndiaRow.hidden = international;
+    phoneIntlInput.hidden = !international;
+    toggleIntl.hidden = international;
+    toggleIndia.hidden = !international;
+    errWhatsapp.textContent = international ? msg('errPhoneIntl') : errWhatsappDefault;
+    fieldGroups.whatsapp.classList.remove('has-error');
+    focusField('whatsapp');
+  }
+
+  toggleIntl.addEventListener('click', () => setPhoneMode(true));
+  toggleIndia.addEventListener('click', () => setPhoneMode(false));
+
+  phoneInput.addEventListener('input', () => {
+    phoneInput.value = cleanIndianDigits(phoneInput.value);
+  });
+
+  phoneIntlInput.addEventListener('input', () => {
+    phoneIntlInput.value = cleanIntlNumber(phoneIntlInput.value);
+  });
+
+  // Show errors when a field loses focus, never while someone is still typing
+  [['name', nameInput], ['company', companyInput], ['email', emailInput], ['whatsapp', phoneInput], ['whatsapp', phoneIntlInput]]
+    .forEach(([key, el]) => {
+      el.addEventListener('blur', () => {
+        // A field that was never touched is not an error yet
+        if (el.value.trim() === '' && !fieldGroups[key].classList.contains('has-error') && !el.dataset.touched) return;
+        validateField(key);
+      });
+      el.addEventListener('input', () => {
+        el.dataset.touched = '1';
+        if (fieldGroups[key].classList.contains('has-error')) validateField(key);
+      });
+    });
+
+  // Enter moves to the next field; on the last field it presses the button
+  [[nameInput, companyInput], [companyInput, emailInput], [emailInput, null]].forEach(([from, to]) => {
+    from.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      if (to) to.focus();
+      else focusField('whatsapp');
+    });
+  });
+
+  [phoneInput, phoneIntlInput].forEach(el => {
+    el.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      submitContactForm();
+    });
+  });
+
+  function submitContactForm() {
+    const order = ['name', 'company', 'email', 'whatsapp'];
+    let firstInvalid = null;
+    order.forEach(key => {
+      if (!validateField(key) && !firstInvalid) firstInvalid = key;
+    });
+    if (firstInvalid) {
+      focusField(firstInvalid);
+      return;
+    }
+
+    wizardState.name = nameInput.value.trim();
+    wizardState.company = companyInput.value.trim();
+    wizardState.email = emailInput.value.trim();
+    wizardState.whatsapp_number = phoneIsInternational ? phoneIntlInput.value.trim() : phoneInput.value;
+
+    // Track Lead once, when the contact details are submitted
+    try {
+      trackOnce('Lead', { content_name: 'ContactForm' });
+    } catch (err) {
+      console.warn('Meta pixel lead tracking notice:', err);
+    }
+
+    goToStep(4);
+  }
+
   if (contactForm) {
     contactForm.addEventListener('submit', (e) => {
       e.preventDefault();
-      
-      const nameInput = document.getElementById('field-name');
-      const companyInput = document.getElementById('field-company');
-      const emailInput = document.getElementById('field-email');
-      const phoneInput = document.getElementById('field-whatsapp');
-
-      let isValid = true;
-
-      // Validate Name
-      if (!nameInput.value.trim()) {
-        nameInput.closest('.form-group').classList.add('has-error');
-        isValid = false;
-      } else {
-        nameInput.closest('.form-group').classList.remove('has-error');
-      }
-
-      // Validate Company
-      if (!companyInput.value.trim()) {
-        companyInput.closest('.form-group').classList.add('has-error');
-        isValid = false;
-      } else {
-        companyInput.closest('.form-group').classList.remove('has-error');
-      }
-
-      // Validate Email
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(emailInput.value.trim())) {
-        emailInput.closest('.form-group').classList.add('has-error');
-        isValid = false;
-      } else {
-        emailInput.closest('.form-group').classList.remove('has-error');
-      }
-
-      // Validate WhatsApp Phone
-      if (!phoneInput.value.trim() || phoneInput.value.trim().length < 6) {
-        phoneInput.closest('.form-group').classList.add('has-error');
-        isValid = false;
-      } else {
-        phoneInput.closest('.form-group').classList.remove('has-error');
-      }
-
-      if (isValid) {
-        wizardState.name = nameInput.value.trim();
-        wizardState.company = companyInput.value.trim();
-        wizardState.email = emailInput.value.trim();
-        wizardState.whatsapp_number = phoneInput.value.trim();
-        
-        // Track Lead ONCE when Contact Form is submitted (safe execution)
-        try {
-          trackMetaEvent('Lead', { content_name: 'ContactForm' });
-        } catch (err) {
-          console.warn('Meta pixel lead tracking notice:', err);
-        }
-
-        try {
-          loadCalComEmbed();
-        } catch (err) {
-          console.error('Cal.com embed load error:', err);
-        }
-
-        // Unconditionally advance to Step 4
-        goToStep(4);
-      }
+      submitContactForm();
     });
   }
 
-  if (btnStep3Submit) {
-    btnStep3Submit.addEventListener('click', (e) => {
-      if (contactForm && typeof contactForm.requestSubmit === 'function') {
-        contactForm.requestSubmit();
-      } else if (contactForm) {
-        contactForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
-      }
-    });
-  }
-
+  // 5. Open times
   let isSubmittingLead = false;
 
   const monthSlotsCache = {};
@@ -313,282 +371,266 @@ document.addEventListener('DOMContentLoaded', () => {
     return null;
   }
 
-  // Immediately start pre-loading current month slots in background as soon as page loads
-  preloadMonthSlots();
+  function renderTimeZoneLine() {
+    const line = document.getElementById('tz-line');
+    if (!line) return;
+    const tz = wizardState.timezone || '';
+    if (tz === 'Asia/Kolkata' || tz === 'Asia/Calcutta') {
+      line.textContent = msg('tzIndia');
+    } else {
+      const city = tz.split('/').pop().replace(/_/g, ' ') || tz;
+      line.textContent = msg('tzOther').replace('{zone}', city);
+    }
+  }
 
-  // 6. Custom Month Calendar Component with Dynamic Free Slot Fetching
+  // Time picker state lives outside the render so a failed booking can reload the times
+  const picker = {
+    year: new Date().getFullYear(),
+    month: new Date().getMonth(),
+    selectedDate: null,
+    selectedTimeStr: null,
+    bookingError: false,
+    loadError: false
+  };
+
+  let pickerRender = null;
+
   function loadCalComEmbed() {
     const container = document.getElementById('cal-embed-container');
     if (!container) return;
 
     isSubmittingLead = false;
-
     const today = new Date();
-    let currentYear = today.getFullYear();
-    let currentMonth = today.getMonth(); // 0-indexed
+    pickerRender = fetchAndRenderCalendar;
 
-    let selectedDate = null;
-    let selectedTimeStr = null;
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
 
-    async function fetchAndRenderCalendar() {
-      const monthNames = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'
-      ];
+    const pad = (n) => String(n).padStart(2, '0');
+    const dateKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-      const monthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+    async function fetchAndRenderCalendar(focusKey) {
+      const monthStr = `${picker.year}-${pad(picker.month + 1)}`;
       const tz = wizardState.timezone || 'Asia/Kolkata';
       const cacheKey = `${monthStr}_${tz}`;
       let monthData = monthSlotsCache[cacheKey];
 
       if (!monthData) {
-        monthData = await preloadMonthSlots(currentYear, currentMonth);
+        container.innerHTML = `<p class="cal-status">${msg('msgFinding')}</p>`;
+        monthData = await preloadMonthSlots(picker.year, picker.month);
+        if (!monthData) {
+          picker.loadError = true;
+        } else {
+          picker.loadError = false;
+        }
+      }
+
+      if (picker.loadError && !monthData) {
+        container.innerHTML = `
+          <div class="cal-status">
+            <p>${msg('msgLoadError')}</p>
+            <button type="button" class="cal-retry" id="cal-retry">${msg('msgRetry')}</button>
+          </div>`;
+        container.querySelector('#cal-retry').addEventListener('click', () => {
+          picker.loadError = false;
+          fetchAndRenderCalendar();
+        });
+        return;
       }
 
       const availableDates = monthData?.availableDates || [];
       const slotsByDate = monthData?.slotsByDate || {};
 
-      // Auto-set selectedDate to first available date in month if current selection is invalid or null
+      // Select the first day with open times, so the times show without an extra tap
       if (availableDates.length > 0) {
-        const currentSelectedStr = selectedDate ? `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}` : '';
-        if (!selectedDate || !availableDates.includes(currentSelectedStr)) {
-          const firstAvailParts = availableDates[0].split('-');
-          selectedDate = new Date(parseInt(firstAvailParts[0], 10), parseInt(firstAvailParts[1], 10) - 1, parseInt(firstAvailParts[2], 10));
+        const currentSelectedStr = picker.selectedDate ? dateKey(picker.selectedDate) : '';
+        if (!picker.selectedDate || !availableDates.includes(currentSelectedStr)) {
+          const parts = availableDates[0].split('-');
+          picker.selectedDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+          picker.selectedTimeStr = null;
         }
       } else {
-        selectedDate = null;
+        picker.selectedDate = null;
       }
 
-      // First day of current displayed month
-      const firstDayOfMonth = new Date(currentYear, currentMonth, 1);
-      const startingDayOfWeek = firstDayOfMonth.getDay(); // 0 = Sun
-      const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-      const daysInPrevMonth = new Date(currentYear, currentMonth, 0).getDate();
+      const firstDayOfMonth = new Date(picker.year, picker.month, 1);
+      const startingDayOfWeek = firstDayOfMonth.getDay();
+      const daysInMonth = new Date(picker.year, picker.month + 1, 0).getDate();
+      const daysInPrevMonth = new Date(picker.year, picker.month, 0).getDate();
 
       const dayCells = [];
-
-      // Prev month trailing days
       for (let i = startingDayOfWeek - 1; i >= 0; i--) {
-        dayCells.push({
-          dayNum: daysInPrevMonth - i,
-          isCurrentMonth: false,
-          isDisabled: true
-        });
+        dayCells.push({ dayNum: daysInPrevMonth - i, isCurrentMonth: false });
       }
 
-      // Current month days
       const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       for (let d = 1; d <= daysInMonth; d++) {
-        const cellDate = new Date(currentYear, currentMonth, d);
-        const cellDateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const cellDate = new Date(picker.year, picker.month, d);
+        const cellDateStr = `${picker.year}-${pad(picker.month + 1)}-${pad(d)}`;
         const isPast = cellDate < todayZero;
-        const isSunday = cellDate.getDay() === 0;
-        
-        // A day is ONLY available if it has open slots in availableDates
+        const isSunday = cellDate.getDay() === 0; // Sundays stay off
         const hasSlots = availableDates.includes(cellDateStr);
-        const isDisabled = isPast || isSunday || !hasSlots;
-
-        const isSelected = selectedDate && (
-          selectedDate.getFullYear() === currentYear &&
-          selectedDate.getMonth() === currentMonth &&
-          selectedDate.getDate() === d
-        );
 
         dayCells.push({
           dayNum: d,
-          cellDateStr: cellDateStr,
+          cellDateStr,
           isCurrentMonth: true,
-          isDisabled: isDisabled,
-          isSelected: isSelected
+          isDisabled: isPast || isSunday || !hasSlots,
+          isSelected: !!picker.selectedDate && dateKey(picker.selectedDate) === cellDateStr
         });
       }
 
-      // Next month leading days
       const totalCells = dayCells.length > 35 ? 42 : 35;
-      const remaining = totalCells - dayCells.length;
-      for (let i = 1; i <= remaining; i++) {
-        dayCells.push({
-          dayNum: i,
-          isCurrentMonth: false,
-          isDisabled: true
-        });
+      for (let i = 1, remaining = totalCells - dayCells.length; i <= remaining; i++) {
+        dayCells.push({ dayNum: i, isCurrentMonth: false });
       }
 
       const daysGridHtml = dayCells.map(cell => {
-        if (!cell.isCurrentMonth) {
-          return `<div class="cal-day-cell other-month">${cell.dayNum}</div>`;
-        }
-        if (cell.isDisabled) {
-          return `<div class="cal-day-cell disabled" title="No available slots">${cell.dayNum}</div>`;
-        }
-        return `
-          <div class="cal-day-cell available ${cell.isSelected ? 'selected' : ''}" data-day="${cell.dayNum}" data-date="${cell.cellDateStr}">
-            ${cell.dayNum}
-          </div>
-        `;
+        if (!cell.isCurrentMonth) return `<div class="cal-day-cell other-month">${cell.dayNum}</div>`;
+        if (cell.isDisabled) return `<div class="cal-day-cell disabled">${cell.dayNum}</div>`;
+        return `<button type="button" class="cal-day-cell available ${cell.isSelected ? 'selected' : ''}" data-day="${cell.dayNum}" data-date="${cell.cellDateStr}" aria-pressed="${cell.isSelected ? 'true' : 'false'}" aria-label="${monthNames[picker.month]} ${cell.dayNum}">${cell.dayNum}</button>`;
       }).join('');
 
-      // Render Time Slots for Selected Date
       let availableSlots = [];
-      const selectedDateKey = selectedDate ? `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}` : null;
-      if (selectedDateKey && slotsByDate[selectedDateKey]) {
-        availableSlots = slotsByDate[selectedDateKey];
-      }
+      const selectedKey = picker.selectedDate ? dateKey(picker.selectedDate) : null;
+      if (selectedKey && slotsByDate[selectedKey]) availableSlots = slotsByDate[selectedKey];
 
       if (availableSlots.length > 0) {
-        if (!selectedTimeStr || !availableSlots.includes(selectedTimeStr)) {
-          selectedTimeStr = availableSlots[0];
+        if (!picker.selectedTimeStr || !availableSlots.includes(picker.selectedTimeStr)) {
+          picker.selectedTimeStr = availableSlots[0];
         }
       } else {
-        selectedTimeStr = null;
+        picker.selectedTimeStr = null;
       }
 
       const morningSlots = availableSlots.filter(s => s.toLowerCase().includes('am') || s.startsWith('10:') || s.startsWith('11:'));
       const afternoonSlots = availableSlots.filter(s => !morningSlots.includes(s));
 
       const renderSlotBtn = (timeStr) => `
-        <button type="button" class="time-slot-btn js-time-slot ${timeStr === selectedTimeStr ? 'selected' : ''}" data-time="${timeStr}">
-          ${timeStr === selectedTimeStr ? '✓ ' : ''}${timeStr}
-        </button>
+        <button type="button" class="time-slot-btn js-time-slot ${timeStr === picker.selectedTimeStr ? 'selected' : ''}" data-time="${timeStr}" aria-pressed="${timeStr === picker.selectedTimeStr ? 'true' : 'false'}">${timeStr}</button>
       `;
 
       let slotsHtml = '';
       if (availableSlots.length > 0) {
         if (morningSlots.length > 0) {
           slotsHtml += `
-            <div class="time-section-label">Morning Slots</div>
-            <div class="time-slots-grid">
-              ${morningSlots.map(renderSlotBtn).join('')}
-            </div>
-          `;
+            <div class="time-section-label">${msg('labelMorning')}</div>
+            <div class="time-slots-grid">${morningSlots.map(renderSlotBtn).join('')}</div>`;
         }
         if (afternoonSlots.length > 0) {
           slotsHtml += `
-            <div class="time-section-label" style="${morningSlots.length > 0 ? 'margin-top: 0.75rem;' : ''}">Afternoon &amp; Evening</div>
-            <div class="time-slots-grid">
-              ${afternoonSlots.map(renderSlotBtn).join('')}
-            </div>
-          `;
+            <div class="time-section-label">${msg('labelAfternoon')}</div>
+            <div class="time-slots-grid">${afternoonSlots.map(renderSlotBtn).join('')}</div>`;
         }
       } else {
-        slotsHtml = `
-          <div style="font-size: 0.88rem; color: var(--text-secondary); padding: 1.5rem 0; text-align: center; line-height: 1.5;">
-            No slots available on this date.<br><span style="font-size: 0.8rem; color: var(--text-muted);">Please select a highlighted date on the calendar.</span>
-          </div>
-        `;
+        slotsHtml = `<p class="cal-status">${msg('msgNone')}</p>`;
       }
 
-      const formattedSelectedDate = selectedDate ? selectedDate.toLocaleDateString('en-US', {
+      const formattedSelectedDate = picker.selectedDate ? picker.selectedDate.toLocaleDateString('en-US', {
         weekday: 'short',
         month: 'short',
         day: 'numeric',
         year: 'numeric'
-      }) : 'No Date Selected';
+      }) : '';
 
-      const activeFullSlot = (selectedDate && selectedTimeStr)
-        ? `${formattedSelectedDate} at ${selectedTimeStr} (${wizardState.timezone})`
-        : 'Please select an available date & time slot';
+      const activeFullSlot = (picker.selectedDate && picker.selectedTimeStr)
+        ? `${formattedSelectedDate} at ${picker.selectedTimeStr} (${wizardState.timezone})`
+        : '';
 
-      const isConfirmDisabled = !selectedDate || !selectedTimeStr;
+      const isConfirmDisabled = !picker.selectedDate || !picker.selectedTimeStr;
 
       container.innerHTML = `
+        ${picker.bookingError ? `<p class="cal-error" role="alert">${msg('msgBookingError')}</p>` : ''}
         <div class="month-calendar-wrapper">
           <div class="cal-layout-row">
-            <!-- Left Column: Full Month Grid -->
             <div>
               <div class="month-nav-header">
-                <button type="button" class="month-nav-btn" id="cal-prev-month">‹</button>
-                <div class="month-title">${monthNames[currentMonth]} ${currentYear}</div>
-                <button type="button" class="month-nav-btn" id="cal-next-month">›</button>
+                <button type="button" class="month-nav-btn" id="cal-prev-month" aria-label="Previous month">
+                  <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M11 3L5 9l6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+                <div class="month-title">${monthNames[picker.month]} ${picker.year}</div>
+                <button type="button" class="month-nav-btn" id="cal-next-month" aria-label="Next month">
+                  <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M7 3l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
               </div>
-
               <div class="calendar-weekdays-grid">
                 <div>SUN</div><div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div>
               </div>
-
-              <div class="calendar-days-grid">
-                ${daysGridHtml}
-              </div>
+              <div class="calendar-days-grid">${daysGridHtml}</div>
             </div>
-
-            <!-- Right Column: Time Slots -->
-            <div class="time-slots-container">
-              ${slotsHtml}
-            </div>
+            <div class="time-slots-container">${slotsHtml}</div>
           </div>
 
           <div class="slot-summary-box">
-            <div class="selected-slot-badge">
-              <span>Selected:</span> <span>${activeFullSlot}</span>
-            </div>
-            <button type="button" class="btn-primary" id="btn-confirm-final-slot" ${isConfirmDisabled ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''} style="width: 100%; min-height: 48px; font-size: 1rem;">
-              <span>Confirm Strategy Call Slot →</span>
-            </button>
+            <div class="selected-slot-badge">${activeFullSlot}</div>
+            <button type="button" class="btn-primary" id="btn-confirm-final-slot" ${isConfirmDisabled ? 'disabled' : ''}>${msg('msgBook')}</button>
           </div>
         </div>
       `;
 
-      // Month Nav Buttons
-      container.querySelector('#cal-prev-month').addEventListener('click', () => {
-        if (currentMonth === 0) {
-          currentMonth = 11;
-          currentYear--;
-        } else {
-          currentMonth--;
-        }
-        selectedDate = null;
-        selectedTimeStr = null;
-        fetchAndRenderCalendar();
-      });
+      const shiftMonth = (delta) => {
+        picker.month += delta;
+        if (picker.month < 0) { picker.month = 11; picker.year--; }
+        if (picker.month > 11) { picker.month = 0; picker.year++; }
+        picker.selectedDate = null;
+        picker.selectedTimeStr = null;
+        picker.bookingError = false;
+        fetchAndRenderCalendar('#cal-' + (delta < 0 ? 'prev' : 'next') + '-month');
+      };
 
-      container.querySelector('#cal-next-month').addEventListener('click', () => {
-        if (currentMonth === 11) {
-          currentMonth = 0;
-          currentYear++;
-        } else {
-          currentMonth++;
-        }
-        selectedDate = null;
-        selectedTimeStr = null;
-        fetchAndRenderCalendar();
-      });
+      container.querySelector('#cal-prev-month').addEventListener('click', () => shiftMonth(-1));
+      container.querySelector('#cal-next-month').addEventListener('click', () => shiftMonth(1));
 
-      // Day Cell Click (Only clickable if available)
       container.querySelectorAll('.cal-day-cell.available').forEach(cell => {
         cell.addEventListener('click', () => {
           const dayNum = parseInt(cell.dataset.day, 10);
-          selectedDate = new Date(currentYear, currentMonth, dayNum);
-          selectedTimeStr = null;
-          fetchAndRenderCalendar();
+          picker.selectedDate = new Date(picker.year, picker.month, dayNum);
+          picker.selectedTimeStr = null;
+          picker.bookingError = false;
+          fetchAndRenderCalendar(`.cal-day-cell[data-day="${dayNum}"]`);
         });
       });
 
-      // Time Slot Click
       container.querySelectorAll('.js-time-slot').forEach(btn => {
         btn.addEventListener('click', () => {
-          selectedTimeStr = btn.dataset.time;
-          fetchAndRenderCalendar();
+          picker.selectedTimeStr = btn.dataset.time;
+          picker.bookingError = false;
+          fetchAndRenderCalendar(`.js-time-slot[data-time="${btn.dataset.time}"]`);
         });
       });
 
-      // Confirm CTA Click
       const btnConfirmFinal = container.querySelector('#btn-confirm-final-slot');
       if (btnConfirmFinal && !isConfirmDisabled) {
         btnConfirmFinal.addEventListener('click', () => {
+          if (isSubmittingLead) return;
+          isSubmittingLead = true;
           btnConfirmFinal.disabled = true;
-          btnConfirmFinal.textContent = 'Confirming Booking...';
-          const yyyy = selectedDate.getFullYear();
-          const mm = String(selectedDate.getMonth() + 1).padStart(2, '0');
-          const dd = String(selectedDate.getDate()).padStart(2, '0');
-          wizardState.slotDate = `${yyyy}-${mm}-${dd}`;
-          wizardState.slotTime = selectedTimeStr;
-          const finalSlotStr = `${selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at ${selectedTimeStr} (${wizardState.timezone})`;
+          btnConfirmFinal.textContent = msg('msgBooking');
+          const sel = picker.selectedDate;
+          wizardState.slotDate = `${sel.getFullYear()}-${pad(sel.getMonth() + 1)}-${pad(sel.getDate())}`;
+          wizardState.slotTime = picker.selectedTimeStr;
+          const finalSlotStr = `${sel.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at ${picker.selectedTimeStr} (${wizardState.timezone})`;
           handleSlotConfirmation(finalSlotStr);
         });
+      }
+
+      if (typeof focusKey === 'string' && focusKey) {
+        const toFocus = container.querySelector(focusKey);
+        if (toFocus) toFocus.focus({ preventScroll: true });
       }
     }
 
     fetchAndRenderCalendar();
+  }
+
+  // The booking failed: stay on the time screen, show the message, reload the times, let the visitor pick again
+  function showBookingFailure() {
+    isSubmittingLead = false;
+    picker.bookingError = true;
+    Object.keys(monthSlotsCache).forEach(k => delete monthSlotsCache[k]);
+    if (typeof pickerRender === 'function') pickerRender();
   }
 
   // Helper: Extract Date object from any Cal.com payload structure
@@ -722,12 +764,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function submitLeadToBackend(payload) {
-    try {
-      if (btnSimulateBooking) {
-        btnSimulateBooking.disabled = true;
-        btnSimulateBooking.textContent = 'Confirming Slot...';
-      }
+    let result = null;
+    let succeeded = false;
 
+    try {
       const response = await fetch('/api/submit-lead', {
         method: 'POST',
         headers: {
@@ -736,45 +776,40 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify(payload)
       });
 
-      const result = await response.json();
-      
-      if (result.success) {
-        // Track Schedule event on Meta Pixel ONCE for final conversion stage
-        trackMetaEvent('Schedule', {
-          content_name: 'StrategyCallBooked',
-          value: 1.00,
-          currency: 'USD'
-        });
-
-        // Update Thank-You View details
-        document.getElementById('ty-first-name').textContent = payload.name.split(' ')[0] || payload.name;
-        document.getElementById('ty-booked-slot').textContent = payload.bookedSlot;
-        
-        // Setup WhatsApp link with pre-filled confirmation text
-        const waNumber = result.whatsappNumber || '';
-        const waMsg = encodeURIComponent('Hi, I have booked my Enquiry-to-Site-Visit Engine strategy call and confirm that I will attend');
-        const waUrl = `https://wa.me/${waNumber}?text=${waMsg}`;
-        
-        if (btnWhatsappConfirm) {
-          btnWhatsappConfirm.setAttribute('href', waUrl);
-          btnWhatsappConfirm.setAttribute('target', '_blank');
-        }
-
-        goToStep(5);
-      } else {
-        alert('Submission error: ' + (result.error || 'Please try again.'));
-        if (btnSimulateBooking) {
-          btnSimulateBooking.disabled = false;
-          btnSimulateBooking.textContent = 'Simulate Booking Slot →';
-        }
-      }
+      result = await response.json();
+      succeeded = response.ok && !!result && result.success === true;
     } catch (err) {
       console.error('Error submitting lead:', err);
-      // Fallback display if network issue occurs
-      document.getElementById('ty-first-name').textContent = payload.name.split(' ')[0] || payload.name;
-      document.getElementById('ty-booked-slot').textContent = payload.bookedSlot;
-      goToStep(5);
     }
+
+    // Show the booked screen only when the booking is confirmed. Anything else stays on the time screen.
+    if (!succeeded) {
+      showBookingFailure();
+      return;
+    }
+
+    // Track Schedule event on Meta Pixel ONCE for final conversion stage
+    trackMetaEvent('Schedule', {
+      content_name: 'StrategyCallBooked',
+      value: 1.00,
+      currency: 'USD'
+    });
+
+    // Update Thank-You View details
+    document.getElementById('ty-first-name').textContent = payload.name.split(' ')[0] || payload.name;
+    document.getElementById('ty-booked-slot').textContent = payload.bookedSlot;
+
+    // Setup WhatsApp link with pre-filled confirmation text
+    const waNumber = result.whatsappNumber || '';
+    const waMsg = encodeURIComponent('Hi, I have booked my Enquiry-to-Site-Visit Engine strategy call and confirm that I will attend');
+    const waUrl = `https://wa.me/${waNumber}?text=${waMsg}`;
+
+    if (btnWhatsappConfirm) {
+      btnWhatsappConfirm.setAttribute('href', waUrl);
+      btnWhatsappConfirm.setAttribute('target', '_blank');
+    }
+
+    goToStep(5);
   }
 
   // 7. Interactive Step 1 & Step 2 Confirmation Handlers in Thank-You State
@@ -932,6 +967,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (overlayBtn) {
       overlayBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        video.controls = true;
+        if (wrapper) wrapper.classList.add('has-started');
         if (video.paused) {
           video.play().catch(() => {});
         } else {
@@ -958,6 +995,50 @@ document.addEventListener('DOMContentLoaded', () => {
       if (wrapper) wrapper.classList.remove('is-playing');
     });
   });
+
+  // Scroll reveal: a few elements ease in once as they come into view
+  const revealTargets = document.querySelectorAll('.reveal, .cold-list');
+  if ('IntersectionObserver' in window) {
+    const revealObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
+    revealTargets.forEach(el => revealObserver.observe(el));
+  } else {
+    revealTargets.forEach(el => el.classList.add('is-visible'));
+  }
+
+  // Sticky button (phones): shows whenever no page button is on screen, the footer is off screen and the form is closed
+  const stickyCta = document.getElementById('sticky-cta');
+  const stickyBtn = stickyCta ? stickyCta.querySelector('button') : null;
+  const siteFooter = document.getElementById('site-footer');
+  const pageButtons = Array.from(document.querySelectorAll('.js-open-modal')).filter(b => !b.closest('#sticky-cta'));
+  const visibleAnchors = new Set();
+
+  function updateStickyButton() {
+    if (!stickyCta) return;
+    const show = visibleAnchors.size === 0 && !modalBackdrop.classList.contains('active');
+    stickyCta.classList.toggle('is-shown', show);
+    stickyCta.setAttribute('aria-hidden', show ? 'false' : 'true');
+    if (stickyBtn) stickyBtn.tabIndex = show ? 0 : -1;
+  }
+
+  if (stickyCta && 'IntersectionObserver' in window) {
+    const stickyObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) visibleAnchors.add(entry.target);
+        else visibleAnchors.delete(entry.target);
+      });
+      updateStickyButton();
+    });
+    pageButtons.forEach(b => stickyObserver.observe(b));
+    if (siteFooter) stickyObserver.observe(siteFooter);
+  }
+  updateStickyButton();
 
   // Initial Meta Pixel PageView trigger
   trackMetaEvent('PageView');

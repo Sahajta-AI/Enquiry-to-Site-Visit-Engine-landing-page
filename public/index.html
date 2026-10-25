@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-IN" data-angle="default">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,14 +7,33 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>Enquiry-to-Site-Visit Engine — Sahajta AI</title>
-  <meta name="description" content="We install and manage a WhatsApp lead-conversion system that replies to new residential enquiries in seconds, qualifies each buyer, follows up, books site visits and hands ready prospects to your sales team.">
-  
-  <!-- Preconnect to Google Fonts -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet">
-  
-  <link rel="stylesheet" href="/css/main.css">
+  <meta name="description" content="We reply to property enquiries on WhatsApp within 60 seconds, day or night, and book the site visit. Run for you by Sahajta AI.">
+  <link rel="canonical" href="https://sahajta-landing-page-brown.vercel.app/">
+
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Turn more of your paid enquiries into attended site visits">
+  <meta property="og:description" content="We reply to property enquiries on WhatsApp within 60 seconds, day or night, and book the site visit. Run for you by Sahajta AI.">
+  <meta property="og:url" content="https://sahajta-landing-page-brown.vercel.app/">
+  <meta property="og:image" content="https://sahajta-landing-page-brown.vercel.app/images/og-image.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+  <!-- Reads ?angle= before first paint so the wrong headline never flashes -->
+  <script>
+    (function () {
+      var m = location.search.match(/[?&]angle=(paid|speed|noshow)(?:&|$)/);
+      document.documentElement.setAttribute('data-angle', m ? m[1] : 'default');
+      document.documentElement.classList.add('js');
+    })();
+  </script>
+
+  <link rel="preload" href="/fonts/syne-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/main.css?v=2.0.0">
 
   <!-- Meta Pixel Base Code -->
   <script>
@@ -38,290 +57,137 @@
 </head>
 <body>
 
-  <!-- SECTION 1: MINIMAL HEADER (Logo only, no nav, no dropdowns, no secondary CTAs) -->
+  <!-- 5.1 HEADER: logo only, not sticky -->
   <header class="site-header">
     <div class="container header-inner">
-      <a href="/" class="brand-logo" aria-label="Sahajta AI Homepage">
-        <img src="/images/sahajta-logo-transparent.png" alt="Sahajta AI Solution Pvt Ltd" class="brand-logo-img">
+      <a href="/" class="brand-logo" aria-label="Sahajta AI home">
+        <img src="/images/sahajta-logo-transparent.png" alt="Sahajta AI" class="brand-logo-img" width="180" height="58">
       </a>
-
-      <div class="header-badge">
-        <span class="pulse-dot"></span>
-        <span>Built for Residential Developers</span>
-      </div>
     </div>
   </header>
 
   <main>
-    <!-- SECTION 2: HERO SECTION -->
-    <section class="section hero-section">
-      <div class="container container-narrow">
-        <div class="hero-label">
-          FOR RESIDENTIAL DEVELOPERS RUNNING PAID ADS
-        </div>
-        
-        <h1 class="hero-title">
-          Turn More Paid Enquiries Into Qualified, Attended Site Visits
+    <!-- 5.2 HERO -->
+    <section class="hero" id="hero">
+      <div class="container hero-inner">
+        <p class="hero-pre reveal">For residential developers running Meta ads and getting 300+ paid enquiries a month</p>
+
+        <h1 class="hero-title reveal" data-delay="1">
+          <span class="h1-variant h1-default">Turn more of your paid enquiries into <span class="mark">attended site visits</span>, without hiring more pre-sales staff</span>
+          <span class="h1-variant h1-paid">You already paid for the lead. Now turn it into a <span class="mark">site visit</span>.</span>
+          <span class="h1-variant h1-speed">A WhatsApp reply <span class="mark">within 60 seconds</span>, day or night. Then a booked site visit.</span>
+          <span class="h1-variant h1-noshow">Booked site visits that never happen? We <span class="mark">remind, re-book and follow up</span> for you.</span>
         </h1>
 
-        <p class="hero-subtitle">
-          We install and manage a WhatsApp lead-conversion system that replies to new enquiries in seconds, qualifies each buyer, follows up, books site visits and hands ready prospects to your sales team.
-        </p>
+        <p class="hero-sub reveal" data-delay="2">Watch the video below to see how our <strong>Warm-Chain System</strong> replies to every new enquiry on WhatsApp <strong>within 60 seconds</strong>, day or night. <strong>So more of the leads you’ve paid for become site visits.</strong></p>
 
-        <div>
-          <button type="button" class="btn-primary js-open-modal">
-            <span>See If Your Project Qualifies</span>
-            <span aria-hidden="true">→</span>
-          </button>
-          <div class="assurance-line">
-            <span class="assurance-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                <path d="m9 12 2 2 4-4"/>
-              </svg>
-            </span>
-            <span>Your Reliable End-to-End System Partner</span>
-          </div>
+        <div class="video-panel reveal" data-delay="3" role="img" aria-label="Sales video, coming soon">
+          <span class="video-panel-text">Video coming soon</span>
+        </div>
+
+        <div class="cta-box reveal" data-delay="4" id="cta-hero">
+          <p class="cta-box-question">Ready to turn more of your paid enquiries into site visits?</p>
+          <button type="button" class="btn-primary js-open-modal">Check if you qualify</button>
         </div>
       </div>
     </section>
 
-    <!-- SECTION 3: SHORT MECHANISM VIDEO SECTION -->
-    <section class="section video-section">
-      <div class="container container-video">
-        <div class="video-frame">
-          <div class="video-placeholder-bg">
-            <button type="button" class="video-play-button js-open-modal" aria-label="Play mechanism video">
-              <svg class="video-play-icon" viewBox="0 0 24 24">
-                <path d="M8 5v14l11-7z"/>
-              </svg>
-            </button>
-            <div class="video-caption-box">
-              <span class="video-tag">⚡ 2-MIN SYSTEM OVERVIEW</span>
-              <h3 class="video-title">How the Enquiry-to-Site-Visit Engine Qualifies &amp; Books Leads</h3>
-              <p class="video-desc">Ad Enquiry → Instant WhatsApp Response → Qualification → Automated Follow-up → Booked Site Visit</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- SECTION 4: PRIMARY CTA REPEAT BLOCK -->
-    <section class="section" style="padding-top: 1rem; padding-bottom: 3.5rem; text-align: center;">
+    <!-- 5.4 ON THIS CALL, WE'LL -->
+    <section class="call-block" aria-labelledby="call-label">
       <div class="container">
-        <button type="button" class="btn-primary js-open-modal">
-          <span>See If Your Project Qualifies</span>
-          <span aria-hidden="true">→</span>
-        </button>
-        <div class="assurance-line">
-          <span class="assurance-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-              <path d="m9 12 2 2 4-4"/>
-            </svg>
-          </span>
-          <span>Your Reliable End-to-End System Partner</span>
-        </div>
+        <p class="call-label" id="call-label">On this call, we’ll:</p>
+        <ul class="call-list">
+          <li class="reveal"><svg class="tick" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10.5l4 4 8-9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Diagnose the exact step that’s costing you site visits</span></li>
+          <li class="reveal" data-delay="1"><svg class="tick" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10.5l4 4 8-9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Map out exactly what we’d build for your specific project and market</span></li>
+          <li class="reveal" data-delay="2"><svg class="tick" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10.5l4 4 8-9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Show you exactly where your enquiries are going cold — using your actual numbers</span></li>
+        </ul>
       </div>
     </section>
 
-    <!-- SECTION 5: "ON THIS CALL WE WILL" SECTION -->
-    <section class="section section-alt">
-      <div class="container container-narrow">
-        <div class="call-outcomes-card">
-          <h2 class="outcomes-title">On This Strategy Call We Will</h2>
-          <ul class="outcomes-list">
-            <li class="outcome-item">
-              <div class="outcome-badge">1</div>
-              <div class="outcome-text">Find where paid enquiries are getting stuck before the site visit</div>
-            </li>
-            <li class="outcome-item">
-              <div class="outcome-badge">2</div>
-              <div class="outcome-text">Map the WhatsApp qualification, follow-up and handoff flow for the project</div>
-            </li>
-            <li class="outcome-item">
-              <div class="outcome-badge">3</div>
-              <div class="outcome-text">Decide whether the project and Sahajta AI are the right fit for each other</div>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </section>
-
-    <!-- SECTION 6: "FROM NEW ENQUIRY TO BOOKED SITE VISIT" (5-STEP MECHANISM) -->
-    <section class="section">
+    <!-- 5.5 CLIENT VIDEOS (+ existing screenshot proof wall, unchanged) -->
+    <section class="section" id="testimonials">
       <div class="container">
-        <div style="text-align: center;">
-          <span class="section-label">THE 5-STEP LEAD JOURNEY</span>
-          <h2 class="section-title">From New Enquiry To Booked Site Visit</h2>
-          <p class="section-subtitle">How our managed WhatsApp system transforms ad traffic into confirmed site attendance.</p>
+        <h2 class="section-title reveal">Clients who trust us to build and run their systems</h2>
+
+        <div class="video-grid">
+          <article class="video-card">
+            <div class="video-wrapper">
+              <video preload="none" playsinline poster="/videos/rahul-jain.jpg">
+                <source src="/videos/rahul-jain.mp4" type="video/mp4">
+              </video>
+              <button type="button" class="video-play-overlay" aria-label="Play video from Rahul Jain">
+                <span class="play-icon-badge"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>
+              </button>
+            </div>
+            <div class="video-author-meta">
+              <h3 class="video-author-name">Rahul Jain</h3>
+              <p class="video-author-title">CEO, Selona AI, London</p>
+            </div>
+          </article>
+
+          <article class="video-card">
+            <div class="video-wrapper">
+              <video preload="none" playsinline poster="/videos/ashok-vidyasagar.jpg">
+                <source src="/videos/ashok-vidyasagar.mp4" type="video/mp4">
+              </video>
+              <button type="button" class="video-play-overlay" aria-label="Play video from Ashok Vidyasagar">
+                <span class="play-icon-badge"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>
+              </button>
+            </div>
+            <div class="video-author-meta">
+              <h3 class="video-author-name">Ashok Vidyasagar</h3>
+              <p class="video-author-title">CEO, Stratapilot, Bangalore</p>
+            </div>
+          </article>
+
+          <article class="video-card">
+            <div class="video-wrapper">
+              <video preload="none" playsinline poster="/videos/renuka.jpg">
+                <source src="/videos/renuka.mp4" type="video/mp4">
+              </video>
+              <button type="button" class="video-play-overlay" aria-label="Play video from Renuka">
+                <span class="play-icon-badge"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>
+              </button>
+            </div>
+            <div class="video-author-meta">
+              <h3 class="video-author-name">Renuka</h3>
+              <p class="video-author-title">Founder and CEO, Aroverse, Bangalore</p>
+            </div>
+          </article>
+
+          <article class="video-card">
+            <div class="video-wrapper">
+              <video preload="none" playsinline poster="/videos/jashwant.jpg">
+                <source src="/videos/jashwant.mp4" type="video/mp4">
+              </video>
+              <button type="button" class="video-play-overlay" aria-label="Play video from Jashwant">
+                <span class="play-icon-badge"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>
+              </button>
+            </div>
+            <div class="video-author-meta">
+              <h3 class="video-author-name">Jashwant</h3>
+              <p class="video-author-title">CEO, Hexpertify, Chennai</p>
+            </div>
+          </article>
+
+          <article class="video-card">
+            <div class="video-wrapper">
+              <video preload="none" playsinline poster="/videos/lorenz.jpg">
+                <source src="/videos/lorenz.mp4" type="video/mp4">
+              </video>
+              <button type="button" class="video-play-overlay" aria-label="Play video from Lorenz Mier">
+                <span class="play-icon-badge"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>
+              </button>
+            </div>
+            <div class="video-author-meta">
+              <h3 class="video-author-name">Lorenz Mier</h3>
+              <p class="video-author-title">CEO, Mind and Vitals, Belgium</p>
+            </div>
+          </article>
         </div>
 
-        <div class="mechanism-grid">
-          <!-- Step 1 -->
-          <div class="mechanism-card">
-            <span class="step-number">01</span>
-            <h3 class="mechanism-title">A new enquiry enters</h3>
-            <p class="mechanism-body">The lead comes from the project ad, form or landing page.</p>
-          </div>
-
-          <!-- Step 2 -->
-          <div class="mechanism-card">
-            <span class="step-number">02</span>
-            <h3 class="mechanism-title">WhatsApp responds immediately</h3>
-            <p class="mechanism-body">The buyer receives the first useful response while the project is still fresh in their mind.</p>
-          </div>
-
-          <!-- Step 3 -->
-          <div class="mechanism-card">
-            <span class="step-number">03</span>
-            <h3 class="mechanism-title">The buyer is qualified</h3>
-            <p class="mechanism-body">The system collects the details the sales team needs before spending time on the lead.</p>
-          </div>
-
-          <!-- Step 4 -->
-          <div class="mechanism-card">
-            <span class="step-number">04</span>
-            <h3 class="mechanism-title">Follow-up continues</h3>
-            <p class="mechanism-body">The lead is followed up until they book, ask for human help or opt out.</p>
-          </div>
-
-          <!-- Step 5 -->
-          <div class="mechanism-card">
-            <span class="step-number">05</span>
-            <h3 class="mechanism-title">The site visit is booked and handed over</h3>
-            <p class="mechanism-body">The sales team receives the lead, answers and appointment context. The outcome remains trackable.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- SECTION 7: VIDEO TESTIMONIALS -->
-    <section class="section section-alt" id="testimonials">
-      <div class="container">
-        <div style="text-align: center;">
-          <span class="section-label">VERIFIED DEVELOPER FEEDBACK</span>
-          <h2 class="section-title">Why Developers Trust Sahajta AI</h2>
-          <p style="color: var(--text-secondary); max-width: 600px; margin: 0.5rem auto 0 auto; font-size: 1rem;">
-            Watch real estate project leaders share how the Enquiry-to-Site-Visit Engine scaled their site visit volume.
-          </p>
-        </div>
-
-        <div class="video-testimonials-grid">
-          <!-- Video Testimonial 1: Rahul Jain -->
-          <div class="video-testimonial-card">
-            <div class="video-wrapper">
-              <video 
-                controls
-                preload="metadata" 
-                playsinline 
-                poster="/videos/rahul-jain.jpg"
-              >
-                <source src="/videos/rahul-jain.mp4#t=0.5" type="video/mp4">
-                Your browser does not support the video tag.
-              </video>
-              <button type="button" class="video-play-overlay" aria-label="Play video testimonial from Rahul Jain">
-                <span class="play-icon-badge">▶</span>
-              </button>
-            </div>
-            <div class="video-author-meta">
-              <h4 class="video-author-name">Rahul Jain</h4>
-              <p class="video-author-title">CEO Selona AI &bull; London, UK</p>
-              <span class="video-verified-badge">✓ Verified Partner</span>
-            </div>
-          </div>
-
-          <!-- Video Testimonial 2: Ashok Vidyasagar -->
-          <div class="video-testimonial-card">
-            <div class="video-wrapper">
-              <video 
-                controls
-                preload="metadata" 
-                playsinline 
-                poster="/videos/ashok-vidyasagar.jpg"
-              >
-                <source src="/videos/ashok-vidyasagar.mp4#t=0.5" type="video/mp4">
-                Your browser does not support the video tag.
-              </video>
-              <button type="button" class="video-play-overlay" aria-label="Play video testimonial from Ashok Vidyasagar">
-                <span class="play-icon-badge">▶</span>
-              </button>
-            </div>
-            <div class="video-author-meta">
-              <h4 class="video-author-name">Ashok Vidyasagar</h4>
-              <p class="video-author-title">CEO Stratapilot &bull; Bangalore</p>
-              <span class="video-verified-badge">✓ Verified Partner</span>
-            </div>
-          </div>
-
-          <!-- Video Testimonial 3: Renuka -->
-          <div class="video-testimonial-card">
-            <div class="video-wrapper">
-              <video 
-                controls
-                preload="metadata" 
-                playsinline 
-                poster="/videos/renuka.jpg"
-              >
-                <source src="/videos/renuka.mp4#t=0.5" type="video/mp4">
-                Your browser does not support the video tag.
-              </video>
-              <button type="button" class="video-play-overlay" aria-label="Play video testimonial from Renuka">
-                <span class="play-icon-badge">▶</span>
-              </button>
-            </div>
-            <div class="video-author-meta">
-              <h4 class="video-author-name">Renuka</h4>
-              <p class="video-author-title">Founder &amp; CEO Aeroverse &bull; Bangalore</p>
-              <span class="video-verified-badge">✓ Verified Partner</span>
-            </div>
-          </div>
-
-          <!-- Video Testimonial 4: Jaswanth -->
-          <div class="video-testimonial-card">
-            <div class="video-wrapper">
-              <video 
-                controls
-                preload="metadata" 
-                playsinline 
-                poster="/videos/jashwant.jpg"
-              >
-                <source src="/videos/jashwant.mp4#t=0.5" type="video/mp4">
-                Your browser does not support the video tag.
-              </video>
-              <button type="button" class="video-play-overlay" aria-label="Play video testimonial from Jaswanth">
-                <span class="play-icon-badge">▶</span>
-              </button>
-            </div>
-            <div class="video-author-meta">
-              <h4 class="video-author-name">Jaswanth</h4>
-              <p class="video-author-title">CEO Hexpertify &bull; Chennai</p>
-              <span class="video-verified-badge">✓ Verified Partner</span>
-            </div>
-          </div>
-
-          <!-- Video Testimonial 5: Lorenz Mier -->
-          <div class="video-testimonial-card">
-            <div class="video-wrapper">
-              <video 
-                controls
-                preload="metadata" 
-                playsinline 
-                poster="/videos/lorenz.jpg"
-              >
-                <source src="/videos/lorenz.mp4#t=0.5" type="video/mp4">
-                Your browser does not support the video tag.
-              </video>
-              <button type="button" class="video-play-overlay" aria-label="Play video testimonial from Lorenz Mier">
-                <span class="play-icon-badge">▶</span>
-              </button>
-            </div>
-            <div class="video-author-meta">
-              <h4 class="video-author-name">Lorenz Mier</h4>
-              <p class="video-author-title">CEO Mind and Vitals &bull; Belgium</p>
-              <span class="video-verified-badge">✓ Verified Partner</span>
-            </div>
-          </div>
+        <div class="section-cta">
+          <button type="button" class="btn-primary js-open-modal">Check if you qualify</button>
         </div>
 
         <!-- Screenshot Testimonials Sub-Section (Clean Image-First Proof Grid - All 12 Screenshots) -->
@@ -396,218 +262,235 @@
       </div>
     </section>
 
-    <!-- SECTION 8: ONGOING PARTNER ASSURANCE CARD -->
-    <section class="section">
+    <!-- 5.6 IF NOBODY REPLIES WITHIN 60 SECONDS -->
+    <section class="cold-section" id="cold">
+      <div class="container cold-inner">
+        <h2 class="cold-title reveal">If nobody replies within 60 seconds, the enquiry starts going cold</h2>
+        <p class="cold-lead reveal" data-delay="1">A buyer enquires at 11:47 pm on a Sunday. Your team replies on Monday. By then, they may have enquired at two other projects.</p>
+
+        <div class="cold-stat reveal" data-delay="1">
+          <span class="cold-number" aria-label="7 times">7×</span>
+          <p class="cold-stat-text">Firms that replied within an hour were nearly 7 times more likely to qualify the lead than firms that replied an hour later.</p>
+        </div>
+
+        <p class="cold-intro reveal">Enquiries go cold in four places:</p>
+        <ol class="cold-list">
+          <li class="reveal"><h3>Nights and weekends</h3><p>Nobody is there to reply.</p></li>
+          <li class="reveal" data-delay="1"><h3>After two calls</h3><p>Telecallers try once or twice, then stop.</p></li>
+          <li class="reveal" data-delay="2"><h3>Before the visit</h3><p>Developers estimate 30–40% of booked visits are no-shows.</p></li>
+          <li class="reveal" data-delay="3"><h3>At the handover</h3><p>Your salesperson starts from zero.</p></li>
+        </ol>
+
+        <p class="cold-close reveal">You paid for every one of these enquiries.</p>
+      </div>
+    </section>
+
+    <!-- 5.8 QUESTIONS -->
+    <section class="section faq-section" id="questions">
       <div class="container container-narrow">
-        <div class="partner-assurance-card">
-          <h3>Your Reliable End-to-End System Partner</h3>
-          <p>We build it, launch it and keep it working. Ongoing reviews, fixes and maintenance stay with us, so your team does not have to manage the system alone.</p>
+        <h2 class="section-title reveal">Questions</h2>
+
+        <div class="faq-list">
+          <details class="faq-item">
+            <summary><span>Does this replace our sales team?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+            <p>No. We handle the first reply, the follow-up and the booking. Your team does the site visits and closes the sale.</p>
+          </details>
+          <details class="faq-item">
+            <summary><span>We already have a CRM and have tried chatbots. Why is this different?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+            <p>Those are tools your team has to run. We set this up, run it every day and improve it every week.</p>
+          </details>
+          <details class="faq-item">
+            <summary><span>Will it work with our ads and CRM?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+            <p>Usually, yes. We check your lead sources and CRM on the call.</p>
+          </details>
+          <details class="faq-item">
+            <summary><span>What if it tells a buyer something wrong?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+            <p>It only answers from details you approve. Anything else goes straight to your team.</p>
+          </details>
+          <details class="faq-item">
+            <summary><span>Most of our leads are junk. Will this help?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+            <p>The first few questions sort serious buyers from the rest, so your team spends its time on the right people.</p>
+          </details>
+          <details class="faq-item">
+            <summary><span>Is there a lock-in?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+            <p>No. It’s month to month.</p>
+          </details>
+          <details class="faq-item">
+            <summary><span>What happens to our buyers’ data?</span><span class="faq-icon" aria-hidden="true"></span></summary>
+            <p>It stays yours. We sign data processing terms and follow India’s DPDP rules.</p>
+          </details>
         </div>
       </div>
     </section>
 
-    <!-- SECTION 9: SHORT FAQ SECTION -->
-    <section class="section section-alt">
-      <div class="container">
-        <div style="text-align: center;">
-          <span class="section-label">COMMON QUESTIONS</span>
-          <h2 class="section-title">Frequently Asked Questions</h2>
-        </div>
-
-        <div class="faq-grid container-narrow" style="margin: 2rem auto 0 auto;">
-          <div class="faq-card">
-            <h3 class="faq-question">Does this replace our sales team?</h3>
-            <p class="faq-answer">No. The system handles the first response, qualification, follow-up and booking. Your sales team handles human conversations, site visits and closing.</p>
-          </div>
-
-          <div class="faq-card">
-            <h3 class="faq-question">Can this work with our current ads and CRM?</h3>
-            <p class="faq-answer">The existing lead sources and tools are reviewed first. The system is then connected around the project workflow wherever practical.</p>
-          </div>
-
-          <div class="faq-card">
-            <h3 class="faq-question">What happens when a lead needs a person?</h3>
-            <p class="faq-answer">The conversation is handed to the right team member with the lead details and context already collected.</p>
-          </div>
-
-          <div class="faq-card">
-            <h3 class="faq-question">What happens on the first call?</h3>
-            <p class="faq-answer">We review the current lead journey, map the right system and decide whether the project is a fit.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- SECTION 10: FINAL CTA SECTION -->
-    <section class="section final-cta-section">
+    <!-- 5.9 FINAL BOX -->
+    <section class="final-section" id="final">
       <div class="container container-narrow">
-        <h2 class="final-cta-title">See If This Fits Your Project</h2>
-        <div>
-          <button type="button" class="btn-primary js-open-modal">
-            <span>See If Your Project Qualifies</span>
-            <span aria-hidden="true">→</span>
-          </button>
-          <div class="assurance-line">
-            <span class="assurance-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                <path d="m9 12 2 2 4-4"/>
-              </svg>
-            </span>
-            <span>Your Reliable End-to-End System Partner</span>
-          </div>
+        <div class="final-box reveal">
+          <h2 class="final-title">Ready to turn more of your paid enquiries into site visits?</h2>
+          <p class="final-line">Every enquiry that waits is ad money you’ve already spent.</p>
+          <button type="button" class="btn-primary js-open-modal">Check if you qualify</button>
         </div>
       </div>
     </section>
   </main>
 
-  <!-- SECTION 11: COMPACT LEGAL FOOTER -->
-  <footer class="site-footer">
+  <!-- 5.10 FOOTER -->
+  <footer class="site-footer" id="site-footer">
     <div class="container footer-inner">
-      <!-- Legal Links Only -->
+      <div class="footer-brand">
+        <img src="/images/sahajta-logo-transparent.png" alt="Sahajta AI" class="footer-logo" width="120" height="39" loading="lazy">
+        <p class="footer-company">Sahajta AI Solution Private Limited</p>
+        <p class="footer-meta">CIN U63999RJ2026PTC111789</p>
+        <p class="footer-meta"><a href="https://goo.gl/maps/XUk1csk9Mik3FsRt6" target="_blank" rel="noopener">235, Binnamangala, 2nd Floor, 13th Cross Road, 2nd Stage, Indira Nagar, Bengaluru - 560038</a></p>
+        <p class="footer-meta"><a href="mailto:hello@sahajta.com">hello@sahajta.com</a></p>
+      </div>
+
       <ul class="footer-links">
-        <li><a href="/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a></li>
-        <li><a href="/terms-and-conditions" target="_blank" rel="noopener">Terms &amp; Conditions</a></li>
-        <li><a href="/cookie-policy" target="_blank" rel="noopener">Cookie Policy</a></li>
-        <li><a href="/disclaimer" target="_blank" rel="noopener">Disclaimer</a></li>
-        <li><a href="/support" target="_blank" rel="noopener">Support &amp; Contact</a></li>
-        <li><a href="/data-deletion" target="_blank" rel="noopener">Data Request &amp; Deletion</a></li>
+        <li><a href="https://www.linkedin.com/company/sahajta-ai/" target="_blank" rel="noopener">LinkedIn</a></li>
+        <li><a href="/privacy-policy">Privacy policy</a></li>
+        <li><a href="/terms-and-conditions">Terms and conditions</a></li>
+        <li><a href="/cookie-policy">Cookie policy</a></li>
+        <li><a href="/disclaimer">Disclaimer</a></li>
+        <li><a href="/support">Support and contact</a></li>
+        <li><a href="/data-deletion">Data request and deletion</a></li>
       </ul>
-      <p class="footer-copy">&copy; 2026 Sahajta AI Solution Pvt Ltd. All rights reserved.</p>
+
+      <p class="footer-copy">© 2026 Sahajta AI Solution Private Limited. All rights reserved.</p>
     </div>
   </footer>
 
+  <!-- 5.11 STICKY BUTTON (phones only) -->
+  <div class="sticky-cta" id="sticky-cta" aria-hidden="true">
+    <button type="button" class="btn-primary js-open-modal" tabindex="-1">Check if you qualify</button>
+  </div>
+
   <!-- ==========================================================================
-       INTAKE MODAL WIZARD (Steps 1 to 4 + Post-Booking Confirmation)
+       BOOKING FORM (question 1, question 2, details, time) + thank-you (unchanged)
+       Visible words live in data attributes so they are easy to edit.
        ========================================================================== -->
-  <div class="modal-backdrop" id="intake-modal" role="dialog" aria-modal="true" aria-labelledby="wizard-step-pill">
+  <div class="modal-backdrop" id="intake-modal" role="dialog" aria-modal="true" aria-label="Check if you qualify"
+       data-msg-finding="Finding open times…"
+       data-msg-none="No open times this month."
+       data-msg-load-error="We couldn’t load open times. Please check your connection and try again."
+       data-msg-retry="Try again"
+       data-msg-booking-error="We couldn’t confirm your booking. Please check your email for a confirmation before you try again."
+       data-msg-booking="Booking…"
+       data-msg-book="Book this time"
+       data-tz-india="Times are in India time (IST)."
+       data-tz-other="Times are in your time zone ({zone})."
+       data-label-morning="Morning"
+       data-label-afternoon="Afternoon and evening"
+       data-err-phone-intl="Please enter your number with the country code, like +971 50 123 4567.">
     <div class="modal-container">
-      
-      <button type="button" class="modal-close-btn" id="modal-close-btn" aria-label="Close modal">&times;</button>
 
       <div class="modal-header">
-        <div class="modal-step-indicator">
-          <span class="step-pill" id="wizard-step-pill">Step 1 of 4 — Project Status</span>
-        </div>
-        <div class="wizard-progress-bar">
+        <div class="wizard-progress-bar" aria-hidden="true">
           <div class="wizard-progress-fill" id="wizard-progress-fill"></div>
+        </div>
+        <div class="modal-header-row">
+          <span class="step-pill" id="wizard-step-pill" aria-live="polite">Question 1 of 2</span>
+          <button type="button" class="modal-close-btn" id="modal-close-btn" aria-label="Close">
+            <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M4 4l10 10M14 4L4 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
         </div>
       </div>
 
       <div class="modal-body">
-        
-        <!-- STEP 1: Q1 Situation -->
-        <div class="wizard-step active" id="wizard-step-1">
-          <h3 class="wizard-question-title">Which of these best describes your project right now?</h3>
-          
+
+        <!-- STEP 1: Q1 -->
+        <div class="wizard-step active" id="wizard-step-1" data-progress-label="Question 1 of 2">
+          <h3 class="wizard-question-title">What’s happening right now?</h3>
           <div class="options-group">
-            <div class="option-card js-q1-option" data-value="We run paid ads but leads go cold because follow-up is slow">
-              <div class="option-radio"></div>
-              <span class="option-label-text">We run paid ads but leads go cold because follow-up is slow</span>
-            </div>
-
-            <div class="option-card js-q1-option" data-value="We run paid ads but too few leads book or attend site visits">
-              <div class="option-radio"></div>
-              <span class="option-label-text">We run paid ads but too few leads book or attend site visits</span>
-            </div>
-
-            <div class="option-card js-q1-option" data-value="We have an active residential project and are about to start ads">
-              <div class="option-radio"></div>
-              <span class="option-label-text">We have an active residential project and are about to start ads</span>
-            </div>
-
-            <div class="option-card js-q1-option" data-value="We are still planning or exploring">
-              <div class="option-radio"></div>
-              <span class="option-label-text">We are still planning or exploring</span>
-            </div>
-          </div>
-
-          <div class="wizard-footer" style="justify-content: flex-end;">
-            <button type="button" class="btn-primary" id="btn-step-1-next" disabled>
-              <span>Next Step →</span>
+            <button type="button" class="option-card js-q1-option" data-value="We run paid ads but leads go cold because follow-up is slow">
+              <span class="option-label-text">We run ads, but leads go cold because follow-up is slow</span>
+            </button>
+            <button type="button" class="option-card js-q1-option" data-value="We run paid ads but too few leads book or attend site visits">
+              <span class="option-label-text">We run ads, but too few leads book or turn up for site visits</span>
+            </button>
+            <button type="button" class="option-card js-q1-option" data-value="We have an active residential project and are about to start ads">
+              <span class="option-label-text">Our project is live and ads start soon</span>
+            </button>
+            <button type="button" class="option-card js-q1-option" data-value="We are still planning or exploring">
+              <span class="option-label-text">We’re still planning</span>
             </button>
           </div>
+          <p class="wizard-hint">2 quick questions. Takes 30 seconds. Your answers help us prepare your call.</p>
         </div>
 
-        <!-- STEP 2: Q2 Urgency -->
-        <div class="wizard-step" id="wizard-step-2">
-          <h3 class="wizard-question-title">If we both feel this is a fit, when would you want us to get the system running?</h3>
-          
-          <div class="options-group">
-            <div class="option-card js-q2-option" data-value="As soon as possible">
-              <div class="option-radio"></div>
+        <!-- STEP 2: Q2 -->
+        <div class="wizard-step" id="wizard-step-2" data-progress-label="Question 2 of 2">
+          <h3 class="wizard-question-title">If it’s a fit, when would you want it running?</h3>
+          <div class="options-group options-short">
+            <button type="button" class="option-card js-q2-option" data-value="As soon as possible">
               <span class="option-label-text">As soon as possible</span>
-            </div>
-
-            <div class="option-card js-q2-option" data-value="Within the next 30 days">
-              <div class="option-radio"></div>
-              <span class="option-label-text">Within the next 30 days</span>
-            </div>
-
-            <div class="option-card js-q2-option" data-value="Within the next 1 to 3 months">
-              <div class="option-radio"></div>
-              <span class="option-label-text">Within the next 1 to 3 months</span>
-            </div>
-
-            <div class="option-card js-q2-option" data-value="I am only exploring right now">
-              <div class="option-radio"></div>
-              <span class="option-label-text">I am only exploring right now</span>
-            </div>
-          </div>
-
-          <div class="wizard-footer">
-            <button type="button" class="btn-back" id="btn-step-2-back">← Back</button>
-            <button type="button" class="btn-primary" id="btn-step-2-next" disabled>
-              <span>Continue to Details →</span>
             </button>
+            <button type="button" class="option-card js-q2-option" data-value="Within the next 30 days">
+              <span class="option-label-text">Within 30 days</span>
+            </button>
+            <button type="button" class="option-card js-q2-option" data-value="Within the next 1 to 3 months">
+              <span class="option-label-text">In 1 to 3 months</span>
+            </button>
+            <button type="button" class="option-card js-q2-option" data-value="I am only exploring right now">
+              <span class="option-label-text">Just exploring for now</span>
+            </button>
+          </div>
+          <div class="wizard-footer">
+            <button type="button" class="btn-back" id="btn-step-2-back">Back</button>
           </div>
         </div>
 
-        <!-- STEP 3: 4 Contact Fields -->
-        <div class="wizard-step" id="wizard-step-3">
-          <h3 class="wizard-question-title" style="margin-bottom: 1.25rem;">Enter your details to view strategy call slots</h3>
-          
+        <!-- STEP 3: details -->
+        <div class="wizard-step" id="wizard-step-3" data-progress-label="Your details">
+          <h3 class="wizard-question-title">Where should we send your call details?</h3>
+
           <form id="intake-contact-form" novalidate>
             <div class="form-group">
-              <label class="form-label" for="field-name">Full Name *</label>
-              <input type="text" id="field-name" class="form-input" placeholder="e.g. Vikram Sharma" required autocomplete="name">
-              <span class="error-msg">Please enter your full name.</span>
+              <label class="form-label" for="field-name">Full name</label>
+              <input type="text" id="field-name" class="form-input" required autocomplete="name" enterkeyhint="next">
+              <span class="error-msg" id="err-name">Please enter your full name.</span>
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="field-company">Company / Project Name *</label>
-              <input type="text" id="field-company" class="form-input" placeholder="e.g. Apex Realty" required>
-              <span class="error-msg">Please enter your company or project name.</span>
+              <label class="form-label" for="field-company">Company or project name</label>
+              <input type="text" id="field-company" class="form-input" required autocomplete="organization" enterkeyhint="next">
+              <span class="error-msg" id="err-company">Please enter your company or project name.</span>
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="field-email">Work Email *</label>
-              <input type="email" id="field-email" class="form-input" placeholder="vikram@apexrealty.com" required autocomplete="email">
-              <span class="error-msg">Please enter a valid email address.</span>
+              <label class="form-label" for="field-email">Work email</label>
+              <input type="email" id="field-email" class="form-input" required autocomplete="email" enterkeyhint="next">
+              <span class="error-msg" id="err-email">Please enter an email address like name@company.com.</span>
             </div>
 
-            <div class="form-group">
-              <label class="form-label" for="field-whatsapp">WhatsApp Number *</label>
-              <input type="tel" id="field-whatsapp" class="form-input" placeholder="+91 98765 43210" required autocomplete="tel">
-              <span class="error-msg">Please enter a valid WhatsApp phone number.</span>
+            <div class="form-group" id="group-whatsapp">
+              <label class="form-label" for="field-whatsapp">WhatsApp number</label>
+              <div class="phone-row" id="phone-india">
+                <span class="phone-prefix" aria-hidden="true">+91</span>
+                <input type="tel" id="field-whatsapp" class="form-input phone-input" inputmode="numeric" autocomplete="tel-national" maxlength="14" enterkeyhint="done">
+              </div>
+              <input type="tel" id="field-whatsapp-intl" class="form-input" inputmode="tel" autocomplete="tel" placeholder="+971 50 123 4567" hidden enterkeyhint="done">
+              <span class="error-msg" id="err-whatsapp">Please enter a 10-digit mobile number.</span>
+              <button type="button" class="link-btn" id="toggle-intl">Not an Indian number?</button>
+              <button type="button" class="link-btn" id="toggle-india" hidden>Use an Indian number</button>
             </div>
+
+            <p class="consent-line">By continuing, you agree to get WhatsApp messages from Sahajta AI about your call. Our privacy policy, linked at the bottom of this page, explains how we use your details.</p>
 
             <div class="wizard-footer">
-              <button type="button" class="btn-back" id="btn-step-3-back">← Back</button>
-              <button type="submit" class="btn-primary" id="btn-step-3-submit">
-                <span>View Calendar Slots →</span>
-              </button>
+              <button type="button" class="btn-back" id="btn-step-3-back">Back</button>
+              <button type="submit" class="btn-primary" id="btn-step-3-submit">See open times</button>
             </div>
           </form>
         </div>
 
-        <!-- STEP 4: Inline Cal.com Calendar Booking -->
-        <div class="wizard-step" id="wizard-step-4">
-          <h3 class="wizard-question-title" style="text-align: center; margin-bottom: 0.5rem;">Select Your Strategy Call Slot</h3>
-          <p style="text-align: center; margin-bottom: 1.25rem; font-size: 0.95rem; color: var(--text-secondary);">Pick a 45-minute time that works for you. We'll review your project details before we connect.</p>
-          
-          <!-- Cal.com Dynamic Embed Container -->
-          <div id="cal-embed-container" style="width: 100%; min-height: 520px; border-radius: var(--radius-md); overflow: hidden; background: #FFFFFF; border: 1px solid var(--border-light);">
+        <!-- STEP 4: time -->
+        <div class="wizard-step" id="wizard-step-4" data-progress-label="Pick a time">
+          <h3 class="wizard-question-title">Pick a time for your 45-minute call</h3>
+          <p class="tz-line" id="tz-line"></p>
+          <div id="cal-embed-container" aria-live="polite"></div>
+          <div class="wizard-footer">
+            <button type="button" class="btn-back" id="btn-step-4-back">Back</button>
           </div>
         </div>
 
@@ -682,11 +565,10 @@
     </div>
   </div>
 
-  <!-- Cal.com Embed SDK -->
   <script type="text/javascript">
     (function (C, A, L) { let p = function (a, ar) { a.q.push(ar); }; let l = C.Cal = C.Cal || function () { let cal = l; let arg = arguments; if (!cal.q) { cal.q = []; } if (typeof arg[0] === 'string') { if (arg[0] === 'init') { let UniqueId = arg[1]; let cfg = arg[2]; if (!cal.ns) { cal.ns = {}; } cal.ns[UniqueId] = cal.ns[UniqueId] || function () { let arg = arguments; let q = cal.ns[UniqueId].q; if (q) { q.push(arg); } else { cal.ns[UniqueId].q = [arg]; } }; p(cal.ns[UniqueId], arg); } else { p(cal, arg); } } else { p(cal, arg); } }; })(window, "https://app.cal.com/embed/embed.js", "init");
     Cal("init", {origin:"https://cal.com"});
   </script>
-  <script src="/js/app.js?v=1.0.9"></script>
+  <script src="/js/app.js?v=2.0.0"></script>
 </body>
 </html>
