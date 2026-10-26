@@ -33,7 +33,7 @@
 
   <link rel="preload" href="/fonts/syne-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/css/main.css?v=2.0.0">
+  <link rel="stylesheet" href="/css/main.css?v=2.1.0">
 
   <!-- Meta Pixel Base Code -->
   <script>
@@ -107,9 +107,15 @@
     <!-- 5.5 CLIENT VIDEOS (+ existing screenshot proof wall, unchanged) -->
     <section class="section" id="testimonials">
       <div class="container">
-        <h2 class="section-title reveal">Clients who trust us to build and run their systems</h2>
+        <div class="video-head">
+          <h2 class="section-title reveal">Clients who trust us to build and run their systems</h2>
+          <div class="video-nav" aria-label="Scroll client videos">
+            <button type="button" class="video-nav-btn" id="video-prev" aria-label="Previous video"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+            <button type="button" class="video-nav-btn" id="video-next" aria-label="Next video"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+          </div>
+        </div>
 
-        <div class="video-grid">
+        <div class="video-grid" id="video-grid">
           <article class="video-card">
             <div class="video-wrapper">
               <video preload="none" playsinline poster="/videos/rahul-jain.jpg">
@@ -502,54 +508,54 @@
             <p class="thank-you-subtitle">Your Enquiry-to-Site-Visit Engine strategy call is confirmed.</p>
             
             <div class="booked-slot-pill">
-              📅 <span id="ty-booked-slot">Upcoming Strategy Call</span>
+              <span id="ty-booked-slot">Upcoming Strategy Call</span>
             </div>
 
             <div class="cal-buttons-row">
-              <button type="button" class="btn-cal" id="btn-add-google-cal" style="cursor: pointer;">
-                <span>📅 Add to Google Calendar</span>
+              <button type="button" class="btn-cal" id="btn-add-google-cal">
+                <span>Add to Google Calendar</span>
               </button>
-              <button type="button" class="btn-cal" id="btn-add-apple-outlook" style="cursor: pointer;">
-                <span>✉️ Add to Apple / Outlook</span>
+              <button type="button" class="btn-cal" id="btn-add-apple-outlook">
+                <span>Add to Apple / Outlook</span>
               </button>
             </div>
 
-            <!-- Complete These 2 Steps Before Your Call -->
+            <!-- Complete these 2 steps before your call -->
             <div class="precall-steps-box">
-              <h4 class="steps-box-title">Complete These 2 Steps Before Your Call</h4>
+              <h4 class="steps-box-title">Complete these 2 steps before your call</h4>
 
               <!-- Step 1: Confirm On WhatsApp -->
               <div class="precall-step-card" id="precall-step-1-card">
                 <div class="step-card-header">
-                  <span class="step-card-title">1. Confirm On WhatsApp</span>
+                  <span class="step-card-title">1. Confirm on WhatsApp</span>
                   <span class="step-status-badge">Action Required</span>
                 </div>
-                <p style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
+                <p class="step-card-text">
                   Click below to send a pre-filled confirmation text so we know you are attending.
                 </p>
                 <a href="#" id="btn-whatsapp-confirm" class="btn-whatsapp-confirm">
-                  <span>💬 Confirm On WhatsApp</span>
+                  <span>Confirm on WhatsApp</span>
                 </a>
               </div>
 
               <!-- Step 2: Watch This Before Your Call -->
               <div class="precall-step-card" id="precall-step-2-card">
                 <div class="step-card-header">
-                  <span class="step-card-title">2. Watch This Before Your Call</span>
+                  <span class="step-card-title">2. Watch this before your call</span>
                   <span class="step-status-badge">Action Required</span>
                 </div>
-                <p style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 0.75rem;">
+                <p class="step-card-text">
                   A quick pre-call video explaining who Sahajta AI is, what our managed system does, and how we prepare.
                 </p>
-                <button type="button" class="btn-primary" id="precall-video-play-btn" style="min-height: 40px; font-size: 0.85rem; padding: 0.5rem 1rem;">
-                  <span>▶ Play Pre-Call Video</span>
+                <button type="button" class="btn-primary btn-precall" id="precall-video-play-btn">
+                  <span>Play pre-call video</span>
                 </button>
               </div>
             </div>
 
             <!-- Preparation Note Box -->
             <div class="prep-numbers-box">
-              <h5>💡 Preparation Checklist for Your Call:</h5>
+              <h5>Preparation checklist for your call</h5>
               <p>Please have the following numbers ready for the last 30 days:</p>
               <ul>
                 <li>Total paid enquiries received</li>
@@ -569,6 +575,6 @@
     (function (C, A, L) { let p = function (a, ar) { a.q.push(ar); }; let l = C.Cal = C.Cal || function () { let cal = l; let arg = arguments; if (!cal.q) { cal.q = []; } if (typeof arg[0] === 'string') { if (arg[0] === 'init') { let UniqueId = arg[1]; let cfg = arg[2]; if (!cal.ns) { cal.ns = {}; } cal.ns[UniqueId] = cal.ns[UniqueId] || function () { let arg = arguments; let q = cal.ns[UniqueId].q; if (q) { q.push(arg); } else { cal.ns[UniqueId].q = [arg]; } }; p(cal.ns[UniqueId], arg); } else { p(cal, arg); } } else { p(cal, arg); } }; })(window, "https://app.cal.com/embed/embed.js", "init");
     Cal("init", {origin:"https://cal.com"});
   </script>
-  <script src="/js/app.js?v=2.0.0"></script>
+  <script src="/js/app.js?v=2.1.0"></script>
 </body>
 </html>

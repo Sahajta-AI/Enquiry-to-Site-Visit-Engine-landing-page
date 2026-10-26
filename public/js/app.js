@@ -996,6 +996,26 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // Video carousel arrows
+  const videoGrid = document.getElementById('video-grid');
+  const videoPrev = document.getElementById('video-prev');
+  const videoNext = document.getElementById('video-next');
+  if (videoGrid && videoPrev && videoNext) {
+    const step = () => {
+      const card = videoGrid.querySelector('.video-card');
+      return card ? card.offsetWidth + 24 : 320;
+    };
+    const syncNav = () => {
+      videoPrev.disabled = videoGrid.scrollLeft <= 4;
+      videoNext.disabled = videoGrid.scrollLeft + videoGrid.clientWidth >= videoGrid.scrollWidth - 4;
+    };
+    videoPrev.addEventListener('click', () => videoGrid.scrollBy({ left: -step(), behavior: 'smooth' }));
+    videoNext.addEventListener('click', () => videoGrid.scrollBy({ left: step(), behavior: 'smooth' }));
+    videoGrid.addEventListener('scroll', syncNav, { passive: true });
+    window.addEventListener('resize', syncNav);
+    syncNav();
+  }
+
   // Scroll reveal: a few elements ease in once as they come into view
   const revealTargets = document.querySelectorAll('.reveal, .cold-list');
   if ('IntersectionObserver' in window) {
