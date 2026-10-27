@@ -968,7 +968,6 @@ document.addEventListener('DOMContentLoaded', () => {
       overlayBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         video.controls = true;
-        if (wrapper) wrapper.classList.add('has-started');
         if (video.paused) {
           video.play().catch(() => {});
         } else {
