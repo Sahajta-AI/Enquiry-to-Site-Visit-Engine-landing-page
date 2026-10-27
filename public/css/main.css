@@ -481,13 +481,6 @@ html[data-angle="noshow"] .h1-noshow {
   display: block;
 }
 
-/* Rahul's source is a 3-person call: crop to his tile (left) */
-.video-wrapper--rahul video {
-  object-position: 0% 50%;
-  transform: scale(1.7);
-  transform-origin: 50% 48%;
-}
-
 /* Hide only the central native start button; keep the controls bar */
 video::-webkit-media-controls-start-playback-button,
 video::-webkit-media-controls-overlay-play-button {
