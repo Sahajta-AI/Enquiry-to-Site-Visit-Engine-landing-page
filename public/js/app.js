@@ -955,6 +955,19 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
 
+    // Tapping the picture while it plays pauses it; the bottom strip stays for the native controls
+    video.addEventListener('click', (e) => {
+      const box = video.getBoundingClientRect();
+      if (e.clientY > box.bottom - 64) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (video.paused) {
+        video.play().catch(() => {});
+      } else {
+        video.pause();
+      }
+    }, true);
+
     video.addEventListener('play', () => {
       // Pause any other video testimonials on the page
       allVideos.forEach(otherVideo => {
@@ -962,7 +975,7 @@ document.addEventListener('DOMContentLoaded', () => {
           otherVideo.pause();
         }
       });
-      if (wrapper) wrapper.classList.add('is-playing', 'has-started');
+      if (wrapper) wrapper.classList.add('is-playing');
     });
 
     video.addEventListener('pause', () => {
@@ -970,7 +983,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     video.addEventListener('ended', () => {
-      if (wrapper) wrapper.classList.remove('is-playing', 'has-started');
+      if (wrapper) wrapper.classList.remove('is-playing');
     });
   });
 

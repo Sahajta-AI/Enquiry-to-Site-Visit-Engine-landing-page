@@ -592,8 +592,7 @@ video::-webkit-media-controls-overlay-play-button {
   background: rgba(7, 47, 30, 0.04);
 }
 
-.video-wrapper.is-playing .video-play-overlay,
-.video-wrapper.has-started .video-play-overlay {
+.video-wrapper.is-playing .video-play-overlay {
   display: none !important;
 }
 
