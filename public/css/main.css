@@ -592,8 +592,19 @@ video::-webkit-media-controls-overlay-play-button {
   background: rgba(7, 47, 30, 0.04);
 }
 
+/* While playing, the button is invisible but still a tap target, so a tap on the picture pauses.
+   Once the native controls are on, the bottom strip is left free for them. */
+.video-wrapper.has-controls .video-play-overlay {
+  height: calc(100% - 64px);
+}
+
 .video-wrapper.is-playing .video-play-overlay {
-  display: none !important;
+  background: transparent;
+}
+
+.video-wrapper.is-playing .play-icon-badge {
+  opacity: 0;
+  transform: scale(0.8);
 }
 
 .play-icon-badge {

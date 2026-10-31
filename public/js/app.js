@@ -947,6 +947,7 @@ document.addEventListener('DOMContentLoaded', () => {
       overlayBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         video.controls = true;
+        if (wrapper) wrapper.classList.add('has-controls');
         if (video.paused) {
           video.play().catch(() => {});
         } else {
@@ -954,19 +955,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     }
-
-    // Tapping the picture while it plays pauses it; the bottom strip stays for the native controls
-    video.addEventListener('click', (e) => {
-      const box = video.getBoundingClientRect();
-      if (e.clientY > box.bottom - 64) return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (video.paused) {
-        video.play().catch(() => {});
-      } else {
-        video.pause();
-      }
-    }, true);
 
     video.addEventListener('play', () => {
       // Pause any other video testimonials on the page
