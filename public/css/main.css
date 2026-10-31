@@ -126,6 +126,90 @@ img, video {
   max-width: 820px;
 }
 
+/* Client faces under the hero button */
+.client-faces {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  margin-top: 1.25rem;
+}
+
+.faces-row {
+  display: inline-flex;
+}
+
+.faces-row img {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--cream);
+  display: block;
+}
+
+.faces-row picture + picture {
+  margin-left: -10px;
+}
+
+.client-faces p {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+/* What people tell us: message screenshots with the praise highlighted */
+.wall-section .section-title {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.wall-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.shot {
+  position: relative;
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.shot-hl {
+  position: absolute;
+  background: rgba(255, 214, 0, 0.55);
+  mix-blend-mode: multiply;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.shot--dark .shot-hl {
+  background: rgba(214, 170, 30, 0.55);
+  mix-blend-mode: screen;
+}
+
+.wall-cta {
+  display: flex;
+  justify-content: center;
+  margin-top: 2.5rem;
+}
+
+@media (max-width: 767px) {
+  .wall-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ==========================================================================
    Header (not sticky)
    ========================================================================== */
@@ -343,7 +427,7 @@ html[data-angle="noshow"] .h1-noshow {
 }
 
 .call-label {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -625,7 +709,6 @@ video::-webkit-media-controls-overlay-play-button {
   margin-bottom: 4rem;
 }
 
-/* A thin gold line draws across as the list comes into view */
 .cold-list::before {
   content: '';
   position: absolute;
@@ -634,13 +717,6 @@ video::-webkit-media-controls-overlay-play-button {
   right: 0;
   height: 2px;
   background: var(--gold);
-  transform: scaleX(0);
-  transform-origin: left center;
-  transition: transform 1100ms var(--ease);
-}
-
-.cold-list.is-visible::before {
-  transform: scaleX(1);
 }
 
 .cold-list li {
@@ -808,6 +884,13 @@ video::-webkit-media-controls-overlay-play-button {
   gap: 2.5rem;
 }
 
+.footer-brand > a:first-child {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
+}
+
 .footer-logo {
   height: 40px;
   width: auto;
@@ -839,7 +922,10 @@ video::-webkit-media-controls-overlay-play-button {
 
 .footer-meta a,
 .footer-links a {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
   padding: 0.3rem 0;
   transition: color var(--transition-fast);
 }
@@ -868,36 +954,6 @@ video::-webkit-media-controls-overlay-play-button {
    ========================================================================== */
 .sticky-cta {
   display: none;
-}
-
-/* ==========================================================================
-   Motion: small and purposeful. Content is never hidden without JavaScript.
-   ========================================================================== */
-.js .reveal {
-  opacity: 0;
-  transform: translateY(20px);
-  transition: opacity 700ms var(--ease), transform 700ms var(--ease);
-}
-
-.js .reveal.is-visible {
-  opacity: 1;
-  transform: none;
-}
-
-.js .reveal[data-delay="1"] { transition-delay: 110ms; }
-.js .reveal[data-delay="2"] { transition-delay: 220ms; }
-.js .reveal[data-delay="3"] { transition-delay: 330ms; }
-.js .reveal[data-delay="4"] { transition-delay: 440ms; }
-
-/* The highlighted phrase is underlined by a gold stroke that draws in */
-.js .mark {
-  background-size: 0% 0.2em;
-  transition: background-size 900ms var(--ease) 650ms;
-}
-
-.js .is-visible .mark,
-.js .mark.is-drawn {
-  background-size: 100% 0.2em;
 }
 
 /* ==========================================================================
@@ -1295,7 +1351,7 @@ video::-webkit-media-controls-overlay-play-button {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   text-align: center;
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   color: var(--ink-mute);
@@ -1357,7 +1413,7 @@ video::-webkit-media-controls-overlay-play-button {
 }
 
 .time-section-label {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1418,108 +1474,6 @@ video::-webkit-media-controls-overlay-play-button {
 
 .slot-summary-box .btn-primary {
   width: 100%;
-}
-
-/* ==========================================================================
-   Existing screenshot proof wall: unchanged
-   ========================================================================== */
-/* Header of the proof wall keeps its original look */
-.screenshot-testimonials-header .section-label {
-  display: inline-block;
-  font-family: var(--font-sans);
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--brand-forest);
-  margin-bottom: 0.85rem;
-}
-
-.screenshot-testimonials-header .section-title {
-  font-family: var(--font-sans);
-  font-size: 2.25rem;
-  font-weight: 800;
-  line-height: 1.25;
-  letter-spacing: -0.02em;
-  text-align: center;
-  max-width: none;
-  margin: 0 0 1rem;
-  color: var(--text-main);
-}
-
-/* Clean Screenshot Proof Grid (All 12 Screenshots Displayed Centered & Full Width) */
-.screenshot-testimonials-container {
-  margin-top: 4rem;
-  padding-top: 3.5rem;
-  border-top: 1px dashed rgba(27, 67, 50, 0.2);
-  width: 100%;
-}
-
-.screenshot-testimonials-header {
-  text-align: center;
-  margin-bottom: 2.5rem;
-}
-
-.screenshot-testimonials-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 2rem;
-  max-width: 1080px;
-  margin: 0 auto;
-}
-
-@media (max-width: 768px) {
-  .screenshot-testimonials-grid {
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
-  }
-}
-
-.screenshot-card {
-  background: #FFFFFF;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
-  transition: transform var(--transition-normal), box-shadow var(--transition-normal), border-color var(--transition-normal);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  min-height: 240px;
-}
-
-.screenshot-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--primary-accent);
-}
-
-.shot {
-  position: relative;
-  width: 100%;
-}
-
-/* Marker highlights on the key lines, like a hand-highlighted screenshot */
-.shot-hl {
-  position: absolute;
-  background: rgba(255, 214, 0, 0.55);
-  mix-blend-mode: multiply;
-  border-radius: 4px;
-  pointer-events: none;
-}
-
-.shot--dark .shot-hl {
-  background: rgba(214, 170, 30, 0.55);
-  mix-blend-mode: screen;
-}
-
-.screenshot-card img {
-  width: 100%;
-  height: auto;
-  display: block;
-  object-fit: contain;
-  border-radius: 8px;
 }
 
 /* ==========================================================================
@@ -1659,7 +1613,7 @@ video::-webkit-media-controls-overlay-play-button {
 }
 
 .step-status-badge {
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   font-weight: 600;
   padding: 0.25rem 0.65rem;
   border-radius: 999px;
@@ -1739,7 +1693,7 @@ video::-webkit-media-controls-overlay-play-button {
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   body {
     padding-bottom: 84px;
   }
@@ -1860,18 +1814,5 @@ video::-webkit-media-controls-overlay-play-button {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     transition-delay: 0ms !important;
-  }
-
-  .js .reveal {
-    opacity: 1;
-    transform: none;
-  }
-
-  .js .mark {
-    background-size: 100% 0.2em;
-  }
-
-  .cold-list::before {
-    transform: scaleX(1);
   }
 }

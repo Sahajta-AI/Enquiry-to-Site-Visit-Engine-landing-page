@@ -729,27 +729,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Official Cal.com JS SDK Event Callback binding
-  if (window.Cal) {
-    try {
-      window.Cal("on", {
-        action: "bookingSuccessful",
-        callback: (e) => {
-          console.log('🎉 [Cal.com SDK Callback]:', e);
-          const extractedDate = extractCalComDate(e);
-          if (extractedDate) {
-            wizardState.bookedDateObj = extractedDate;
-            handleSlotConfirmation(formatSlotString(extractedDate));
-          } else {
-            handleSlotConfirmation();
-          }
-        }
-      });
-    } catch (err) {
-      console.warn('Cal SDK listener notice:', err);
-    }
-  }
-
   function handleSlotConfirmation(overrideSlotText) {
     let formattedSlot = '';
     if (typeof overrideSlotText === 'string' && overrideSlotText.length > 5) {
@@ -1013,22 +992,6 @@ document.addEventListener('DOMContentLoaded', () => {
     videoGrid.addEventListener('scroll', syncNav, { passive: true });
     window.addEventListener('resize', syncNav);
     syncNav();
-  }
-
-  // Scroll reveal: a few elements ease in once as they come into view
-  const revealTargets = document.querySelectorAll('.reveal, .cold-list');
-  if ('IntersectionObserver' in window) {
-    const revealObserver = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('is-visible');
-          revealObserver.unobserve(entry.target);
-        }
-      });
-    }, { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
-    revealTargets.forEach(el => revealObserver.observe(el));
-  } else {
-    revealTargets.forEach(el => el.classList.add('is-visible'));
   }
 
   // Sticky button (phones): shows whenever no page button is on screen, the footer is off screen and the form is closed
