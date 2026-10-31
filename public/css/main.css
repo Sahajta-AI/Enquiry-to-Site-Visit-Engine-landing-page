@@ -593,7 +593,7 @@ video::-webkit-media-controls-overlay-play-button {
 }
 
 .video-wrapper.is-playing .video-play-overlay,
-.video-wrapper video:not(:paused) + .video-play-overlay {
+.video-wrapper.has-started .video-play-overlay {
   display: none !important;
 }
 

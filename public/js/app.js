@@ -962,7 +962,7 @@ document.addEventListener('DOMContentLoaded', () => {
           otherVideo.pause();
         }
       });
-      if (wrapper) wrapper.classList.add('is-playing');
+      if (wrapper) wrapper.classList.add('is-playing', 'has-started');
     });
 
     video.addEventListener('pause', () => {
@@ -970,7 +970,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     video.addEventListener('ended', () => {
-      if (wrapper) wrapper.classList.remove('is-playing');
+      if (wrapper) wrapper.classList.remove('is-playing', 'has-started');
     });
   });
 
