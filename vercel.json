@@ -1,15 +1,18 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "server.js",
-      "use": "@vercel/node"
-    }
+  "framework": null,
+  "buildCommand": "",
+  "outputDirectory": "public",
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" }
   ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "server.js"
+  "redirects": [
+    { "source": "/fit-and-book", "destination": "/", "permanent": false },
+    { "source": "/thank-you", "destination": "/", "permanent": false }
+  ],
+  "functions": {
+    "api/index.js": {
+      "excludeFiles": "{public/**,.env*}"
     }
-  ]
+  }
 }
