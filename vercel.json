@@ -3,13 +3,42 @@
   "builds": [
     {
       "src": "server.js",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "excludeFiles": "public/**"
+      }
+    },
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
     {
+      "src": "/api/(.*)",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/fit-and-book",
+      "status": 302,
+      "headers": { "Location": "/" }
+    },
+    {
+      "src": "/thank-you",
+      "status": 302,
+      "headers": { "Location": "/" }
+    },
+    {
+      "src": "/",
+      "dest": "/public/index.html"
+    },
+    {
+      "src": "/(privacy-policy|terms-and-conditions|cookie-policy|disclaimer|support|data-deletion)",
+      "dest": "/public/$1.html"
+    },
+    {
       "src": "/(.*)",
-      "dest": "server.js"
+      "dest": "/public/$1"
     }
   ]
 }
