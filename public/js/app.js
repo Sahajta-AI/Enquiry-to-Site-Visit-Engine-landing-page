@@ -14,9 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     email: '',
     whatsapp_number: '',
     bookedSlot: '',
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-    whatsappConfirmed: false,
-    precallVideoWatched: false
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   };
 
   // Dynamic Meta Pixel Script Loader & Funnel Configuration
@@ -51,7 +49,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const wizardStep2 = document.getElementById('wizard-step-2');
   const wizardStep3 = document.getElementById('wizard-step-3');
   const wizardStep4 = document.getElementById('wizard-step-4');
-  const wizardThankYou = document.getElementById('wizard-thank-you');
 
   const stepPill = document.getElementById('wizard-step-pill');
   const progressFill = document.getElementById('wizard-progress-fill');
@@ -62,10 +59,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnStep3Back = document.getElementById('btn-step-3-back');
   const btnStep4Back = document.getElementById('btn-step-4-back');
   const btnStep3Submit = document.getElementById('btn-step-3-submit');
-
-  // WhatsApp & Pre-call Video buttons (thank-you screen)
-  const btnWhatsappConfirm = document.getElementById('btn-whatsapp-confirm');
-  const precallVideoPlayBtn = document.getElementById('precall-video-play-btn');
 
   // Words for the form live in data attributes on the modal
   const msg = (key) => modalBackdrop.dataset[key] || '';
@@ -139,22 +132,20 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 2. Wizard navigation
-  const progressByStep = { 1: '25%', 2: '50%', 3: '75%', 4: '100%', 5: '100%' };
+  const progressByStep = { 1: '25%', 2: '50%', 3: '75%', 4: '100%' };
 
   function goToStep(stepNumber) {
     wizardState.currentStep = stepNumber;
 
-    [wizardStep1, wizardStep2, wizardStep3, wizardStep4, wizardThankYou].forEach(el => {
+    [wizardStep1, wizardStep2, wizardStep3, wizardStep4].forEach(el => {
       if (el) el.classList.remove('active');
     });
 
-    const stepEl = { 1: wizardStep1, 2: wizardStep2, 3: wizardStep3, 4: wizardStep4, 5: wizardThankYou }[stepNumber];
+    const stepEl = { 1: wizardStep1, 2: wizardStep2, 3: wizardStep3, 4: wizardStep4 }[stepNumber];
     if (stepEl) stepEl.classList.add('active');
 
     progressFill.style.width = progressByStep[stepNumber] || '25%';
-    stepPill.textContent = stepNumber === 5
-      ? '✓ Booking Confirmed'
-      : (stepEl && stepEl.dataset.progressLabel) || '';
+    stepPill.textContent = (stepEl && stepEl.dataset.progressLabel) || '';
     if (modalBody) modalBody.scrollTop = 0;
 
     if (stepNumber === 3) {
@@ -400,6 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!container) return;
 
     isSubmittingLead = false;
+    picker.monthChecked = false;
     const today = new Date();
     pickerRender = fetchAndRenderCalendar;
 
@@ -438,6 +430,21 @@ document.addEventListener('DOMContentLoaded', () => {
           fetchAndRenderCalendar();
         });
         return;
+      }
+
+      // First time on this screen: if the current month has no open times, open the next month if it has some
+      if (!picker.monthChecked) {
+        picker.monthChecked = true;
+        if (monthData && !(monthData.availableDates || []).length) {
+          const nextYear = picker.month === 11 ? picker.year + 1 : picker.year;
+          const nextMonth = (picker.month + 1) % 12;
+          const nextData = await preloadMonthSlots(nextYear, nextMonth);
+          if (nextData && (nextData.availableDates || []).length) {
+            picker.year = nextYear;
+            picker.month = nextMonth;
+            monthData = nextData;
+          }
+        }
       }
 
       const availableDates = monthData?.availableDates || [];
@@ -633,112 +640,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof pickerRender === 'function') pickerRender();
   }
 
-  // Helper: Extract Date object from any Cal.com payload structure
-  function extractCalComDate(data) {
-    if (!data) return null;
-    
-    // 1. Scan JSON string representation for ISO timestamps (e.g. 2026-08-24T14:30:00 or 2026-08-24)
-    try {
-      const jsonStr = typeof data === 'string' ? data : JSON.stringify(data);
-      const matches = jsonStr.match(/\b(202[4-9]-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?)/g);
-      if (matches && matches.length > 0) {
-        for (const matchStr of matches) {
-          const d = new Date(matchStr);
-          if (!isNaN(d.getTime())) return d;
-        }
-      }
-    } catch (err) {}
-
-    // 2. Direct property key lookup
-    const possiblePaths = [
-      data?.data?.booking?.startTime,
-      data?.data?.booking?.start,
-      data?.data?.booking?.date,
-      data?.data?.startTime,
-      data?.data?.date,
-      data?.data?.start,
-      data?.payload?.booking?.startTime,
-      data?.payload?.booking?.start,
-      data?.payload?.booking?.date,
-      data?.payload?.startTime,
-      data?.payload?.date,
-      data?.booking?.startTime,
-      data?.booking?.start,
-      data?.booking?.date,
-      data?.detail?.booking?.startTime,
-      data?.detail?.booking?.start,
-      data?.detail?.booking?.date,
-      data?.detail?.startTime,
-      data?.detail?.date,
-      data?.date,
-      data?.startTime,
-      data?.start
-    ];
-
-    for (const val of possiblePaths) {
-      if (val) {
-        const d = new Date(val);
-        if (!isNaN(d.getTime())) return d;
-      }
-    }
-    return null;
-  }
-
-  function formatSlotString(dateObj) {
-    return dateObj.toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    }) + ' at ' + dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) + ' (' + wizardState.timezone + ')';
-  }
-
-  // Listen for Cal.com window postMessage events
-  window.addEventListener('message', (e) => {
-    try {
-      const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
-      
-      // Log all Cal.com postMessage events for debugging
-      if (data && (data.type?.startsWith('CAL:') || data.action || data.event)) {
-        console.log('🗓️ [Cal.com Message Event]:', data);
-      }
-
-      const dataType = String(data?.type || data?.action || data?.event || '').toLowerCase();
-      const isBookingSuccess = (
-        dataType === 'cal:booking_successful' ||
-        dataType === 'bookingsuccessful' ||
-        dataType.includes('booking_successful') ||
-        dataType.includes('bookingsuccessful') ||
-        dataType.includes('scheduled')
-      );
-
-      if (data && isBookingSuccess) {
-        console.log('🎉 [Cal.com Booking Successful]:', data);
-        
-        const extractedDate = extractCalComDate(data);
-        if (extractedDate) {
-          wizardState.bookedDateObj = extractedDate;
-          const formatted = formatSlotString(extractedDate);
-          handleSlotConfirmation(formatted);
-        } else {
-          handleSlotConfirmation();
-        }
-      }
-    } catch (err) {
-      // Ignore non-JSON postMessages
-    }
-  });
-
-  function handleSlotConfirmation(overrideSlotText) {
-    let formattedSlot = '';
-    if (typeof overrideSlotText === 'string' && overrideSlotText.length > 5) {
-      formattedSlot = overrideSlotText;
-    } else {
-      // Clean, accurate fallback label if date timestamp was not sent in postMessage
-      formattedSlot = 'Confirmed Strategy Call Slot';
-    }
-
-    wizardState.bookedSlot = formattedSlot;
+  function handleSlotConfirmation(slotText) {
+    wizardState.bookedSlot = slotText;
     submitLeadToBackend(wizardState);
   }
 
@@ -761,181 +664,74 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Error submitting lead:', err);
     }
 
-    // Show the booked screen only when the booking is confirmed. Anything else stays on the time screen.
+    // Open the thank-you page only when the booking went through. Anything else stays on the time screen.
     if (!succeeded) {
       showBookingFailure();
       return;
     }
 
-    // Track Schedule event on Meta Pixel ONCE for final conversion stage
+    // Schedule fires once, here, after a booking succeeds. The /thank-you page never fires it.
     trackMetaEvent('Schedule', {
-      content_name: 'StrategyCallBooked',
+      content_name: 'LeadConversionClarityCallBooked',
       value: 1.00,
       currency: 'USD'
     });
 
-    // Update Thank-You View details
-    document.getElementById('ty-first-name').textContent = payload.name.split(' ')[0] || payload.name;
-    document.getElementById('ty-booked-slot').textContent = payload.bookedSlot;
+    // The booking details stay in this browser's session memory, never in the page address
+    const booked = {
+      firstName: (payload.name || '').trim().split(/\s+/)[0] || '',
+      slotDate: payload.slotDate,
+      slotTime: payload.slotTime,
+      timezone: payload.timezone,
+      rescheduleUrl: (result && result.rescheduleUrl) || ''
+    };
+    try { sessionStorage.setItem('sv_booked', JSON.stringify(booked)); } catch (err) {}
 
-    // Setup WhatsApp link with pre-filled confirmation text
-    const waNumber = result.whatsappNumber || '';
-    const waMsg = encodeURIComponent('Hi, I have booked my Enquiry-to-Site-Visit Engine strategy call and confirm that I will attend');
-    const waUrl = `https://wa.me/${waNumber}?text=${waMsg}`;
+    // Reset the form so Back from /thank-you never shows the time step again
+    resetBookingForm();
 
-    if (btnWhatsappConfirm) {
-      btnWhatsappConfirm.setAttribute('href', waUrl);
-      btnWhatsappConfirm.setAttribute('target', '_blank');
-    }
-
-    goToStep(5);
+    // Short pause so the Schedule event leaves the browser before the page changes
+    setTimeout(() => { window.location.assign('/thank-you'); }, 300);
   }
 
-  // 7. Interactive Step 1 & Step 2 Confirmation Handlers in Thank-You State
-  const btnAddGoogleCal = document.getElementById('btn-add-google-cal');
-  const btnAddAppleOutlook = document.getElementById('btn-add-apple-outlook');
-
-  function getStartDateForBooking() {
-    if (wizardState.bookedDateObj && !isNaN(wizardState.bookedDateObj.getTime())) {
-      return wizardState.bookedDateObj;
-    }
-    
-    // Parse from ty-booked-slot element if present
-    const slotEl = document.getElementById('ty-booked-slot');
-    const slotText = slotEl ? slotEl.textContent : (wizardState.bookedSlot || '');
-    if (slotText && slotText.includes(' at ')) {
-      try {
-        const parts = slotText.split(' at ');
-        const datePart = parts[0].replace(/^[^,]+,\s*/, '').trim();
-        const timePart = parts[1].split('(')[0].trim();
-        const cleanStr = `${datePart} ${timePart}`;
-        const parsed = new Date(cleanStr);
-        if (!isNaN(parsed.getTime())) {
-          return parsed;
-        }
-      } catch (err) {
-        console.warn('Could not parse slot date string:', err);
-      }
-    }
-
-    // Default fallback: Tomorrow at 10:00 AM
-    const fallback = new Date();
-    fallback.setDate(fallback.getDate() + 1);
-    fallback.setHours(10, 0, 0, 0);
-    return fallback;
-  }
-
-  function formatUtcForCal(date) {
-    const yyyy = date.getUTCFullYear();
-    const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(date.getUTCDate()).padStart(2, '0');
-    const hh = String(date.getUTCHours()).padStart(2, '0');
-    const min = String(date.getUTCMinutes()).padStart(2, '0');
-    const ss = String(date.getUTCSeconds()).padStart(2, '0');
-    return `${yyyy}${mm}${dd}T${hh}${min}${ss}Z`;
-  }
-
-  function getGoogleCalendarUrl(startDate, title, description, location) {
-    const endDate = new Date(startDate.getTime() + 45 * 60 * 1000); // 45 minutes meeting
-    const dates = `${formatUtcForCal(startDate)}/${formatUtcForCal(endDate)}`;
-    const baseUrl = 'https://calendar.google.com/calendar/render?action=TEMPLATE';
-    const params = new URLSearchParams({
-      text: title,
-      details: description,
-      location: location,
-      dates: dates
+  function resetBookingForm() {
+    wizardState.currentStep = 1;
+    ['q1_situation', 'q2_urgency', 'name', 'company', 'email', 'whatsapp_number', 'bookedSlot', 'slotDate', 'slotTime'].forEach(k => {
+      wizardState[k] = '';
     });
-    return `${baseUrl}&${params.toString()}`;
-  }
-
-  function downloadIcsFile(startDate, title, description, location) {
-    const endDate = new Date(startDate.getTime() + 45 * 60 * 1000); // 45 minutes meeting
-    const now = new Date();
-    
-    const icsContent = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//Sahajta AI//Strategy Call//EN',
-      'CALSCALE:GREGORIAN',
-      'METHOD:PUBLISH',
-      'BEGIN:VEVENT',
-      `UID:sahajta-strategy-call-${Date.now()}@sahajta.com`,
-      `DTSTAMP:${formatUtcForCal(now)}`,
-      `DTSTART:${formatUtcForCal(startDate)}`,
-      `DTEND:${formatUtcForCal(endDate)}`,
-      `SUMMARY:${title}`,
-      `DESCRIPTION:${description}`,
-      `LOCATION:${location}`,
-      'STATUS:CONFIRMED',
-      'END:VEVENT',
-      'END:VCALENDAR'
-    ].join('\r\n');
-
-    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
-    const link = document.createElement('a');
-    link.href = window.URL.createObjectURL(blob);
-    link.setAttribute('download', 'Sahajta-Strategy-Call.ics');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  }
-
-  // Global Document Event Delegation for Calendar Buttons (Guarantees click handling everywhere)
-  document.addEventListener('click', (e) => {
-    const googleBtn = e.target.closest('#btn-add-google-cal');
-    if (googleBtn) {
-      e.preventDefault();
-      e.stopPropagation();
-      console.log('📅 [Google Cal Clicked]');
-      const startDate = getStartDateForBooking();
-      const title = 'Strategy Call: Sahajta AI Enquiry-to-Site-Visit Engine';
-      const description = '45-minute Strategy call with Sahajta AI team to map your residential lead intake, WhatsApp qualification, and site visit booking engine.';
-      const location = 'Google Meet / Phone Call (Sahajta AI Strategy Team)';
-      const url = getGoogleCalendarUrl(startDate, title, description, location);
-      window.open(url, '_blank');
-      trackMetaEvent('AddToGoogleCalendarClick');
-      return;
+    [nameInput, companyInput, emailInput, phoneInput, phoneIntlInput].forEach(el => {
+      el.value = '';
+      delete el.dataset.touched;
+    });
+    Object.values(fieldGroups).forEach(g => g.classList.remove('has-error'));
+    if (phoneIsInternational) {
+      phoneIsInternational = false;
+      phoneIndiaRow.hidden = false;
+      phoneIntlInput.hidden = true;
+      toggleIntl.hidden = false;
+      toggleIndia.hidden = true;
+      errWhatsapp.textContent = errWhatsappDefault;
     }
+    document.querySelectorAll('.js-q1-option, .js-q2-option').forEach(c => c.classList.remove('selected'));
+    picker.selectedDate = null;
+    picker.selectedTimeStr = null;
+    picker.bookingError = false;
+    picker.loadError = false;
+    Object.keys(monthSlotsCache).forEach(k => delete monthSlotsCache[k]);
+    isSubmittingLead = false;
+    goToStep(1);
+    modalBackdrop.classList.remove('active');
+    document.body.classList.remove('modal-open');
+  }
 
-    const appleBtn = e.target.closest('#btn-add-apple-outlook');
-    if (appleBtn) {
-      e.preventDefault();
-      e.stopPropagation();
-      console.log('✉️ [Apple/Outlook Cal Clicked]');
-      const startDate = getStartDateForBooking();
-      const title = 'Strategy Call: Sahajta AI Enquiry-to-Site-Visit Engine';
-      const description = '45-minute Strategy call with Sahajta AI team to map your residential lead intake, WhatsApp qualification, and site visit booking engine.';
-      const location = 'Google Meet / Phone Call (Sahajta AI Strategy Team)';
-      downloadIcsFile(startDate, title, description, location);
-      trackMetaEvent('AddToAppleOutlookClick');
-      return;
+  // Back from /thank-you can restore this page from the browser's cache: make sure the form is at the start
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) {
+      let booked = false;
+      try { booked = !!sessionStorage.getItem('sv_booked'); } catch (err) {}
+      if (booked) resetBookingForm();
     }
   });
-
-  if (btnWhatsappConfirm) {
-    btnWhatsappConfirm.addEventListener('click', () => {
-      const step1Card = document.getElementById('precall-step-1-card');
-      if (step1Card) {
-        step1Card.classList.add('completed');
-        step1Card.querySelector('.step-status-badge').textContent = '✓ Completed';
-      }
-      wizardState.whatsappConfirmed = true;
-      trackMetaEvent('WhatsAppConfirmClick');
-    });
-  }
-
-  if (precallVideoPlayBtn) {
-    precallVideoPlayBtn.addEventListener('click', () => {
-      alert('▶ Pre-Call Strategy Overview Video Playing...');
-      const step2Card = document.getElementById('precall-step-2-card');
-      if (step2Card) {
-        step2Card.classList.add('completed');
-        step2Card.querySelector('.step-status-badge').textContent = '✓ Completed';
-      }
-      wizardState.precallVideoWatched = true;
-      trackMetaEvent('PreCallVideoWatched');
-    });
-  }
 
   // Video Testimonial Interactive Controller (Auto-Pause Others & Full Native Controls)
   const allVideos = document.querySelectorAll('.video-wrapper video');

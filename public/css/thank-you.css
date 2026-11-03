@@ -1,0 +1,702 @@
+/* ==========================================================================
+   /thank-you  (Thank-you Page Brief v1)
+   One column, mobile first. Landing page colours and fonts, plus the shades the brief names.
+   No fade-ins, nothing moves on its own, no glow, no gradients.
+   ========================================================================== */
+
+:root {
+  --ty-white: #FFFFFF;
+  --ty-grey: #F7F7F2;
+  --ty-card: #FDFCF0;
+  --ty-card-line: #E6E1CF;
+  --ty-line: #E8E8E1;
+  --ty-gold: #D9B75B;            /* shapes only */
+  --ty-gold-big: #A8862C;        /* large heading phrases (3:1) */
+  --ty-gold-small: #86671A;      /* small words (4.5:1) */
+  --ty-grey-text: #6B6B66;
+  --ty-green: #1E7B46;
+  --ty-green-pale: #E6F4EA;
+  --ty-wa: #25D366;
+  --ty-wa-hover: #1FB958;
+  --ty-radius: 14px;
+}
+
+html.ty-html,
+body.ty {
+  background: var(--ty-white);
+}
+
+body.ty {
+  display: block;
+  color: var(--ink);
+}
+
+/* Columns */
+.ty-wrap {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+.ty-wrap-wide {
+  max-width: 780px;
+}
+
+/* ---------- Top ---------- */
+.ty-top {
+  background: var(--ty-white);
+  border-bottom: 1px solid var(--ty-line);
+  padding: 16px 0 40px;
+  text-align: center;
+}
+
+.ty-logo {
+  display: inline-flex;
+  min-height: 44px;
+  min-width: 44px;
+  align-items: center;
+  justify-content: center;
+}
+
+.ty-logo img {
+  width: 96px;
+  height: auto;
+  display: block;
+}
+
+.ty-tick {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0 12px;
+}
+
+.ty-tick[hidden] { display: none; }
+
+/* Outer ring is about twice the disc; on a phone it is drawn outside the box so it never pushes the h1 down */
+.ty-tick-ring {
+  position: relative;
+  display: inline-flex;
+  width: 52px;
+  height: 52px;
+  align-items: center;
+  justify-content: center;
+}
+
+.ty-tick-ring::before {
+  content: '';
+  position: absolute;
+  inset: -26px;
+  border-radius: 50%;
+  border: 2px solid rgba(30, 123, 70, 0.1);
+  background: rgba(30, 123, 70, 0.04);
+  pointer-events: none;
+}
+
+.ty-tick-disc {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--ty-green-pale);
+  border: 2px solid var(--ty-green);
+  color: var(--ty-green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ty-tick-disc svg { width: 24px; height: 24px; }
+
+.ty-h1 {
+  font-size: 1.75rem;           /* about 28px on a phone */
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  font-weight: 800;
+  text-wrap: balance;
+  margin: 18px 0 8px;
+}
+
+.ty-sub {
+  color: var(--ty-grey-text);
+  font-size: 1rem;
+  line-height: 1.5;
+  margin: 0 auto 22px;
+  max-width: 34rem;
+}
+
+/* The card */
+.ty-card {
+  background: var(--ty-card);
+  border: 1px solid var(--ty-card-line);
+  border-radius: 16px;
+  padding: 16px 14px 18px;
+  margin-top: 18px;
+  text-align: center;
+}
+
+.ty-sub:not([hidden]) + .ty-card { margin-top: 0; }
+
+.ty-card-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ty-gold-small);
+  margin-bottom: 4px;
+}
+
+.ty-card-time {
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink);
+  margin-bottom: 12px;
+}
+
+.ty-card-lead {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--ink);
+  margin-bottom: 12px;
+}
+
+.ty-card-label[hidden], .ty-card-time[hidden], .ty-card-lead[hidden] { display: none; }
+
+.ty-inner {
+  background: var(--ty-white);
+  border: 1px solid var(--ty-card-line);
+  border-radius: 12px;
+  padding: 14px 12px 12px;
+}
+
+.ty-confirm-line {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.35;
+  margin-bottom: 12px;
+}
+
+.ty-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ty-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0.7rem 1rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-family: var(--font-sans);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: none;
+  transition: background-color var(--transition-fast);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ty-btn .ty-ico { flex: 0 0 22px; }
+
+.ty-btn-wa { background: var(--ty-wa); }
+.ty-btn-wa:hover { background: var(--ty-wa-hover); }
+
+.ty-btn-sms { background: var(--gold); }
+.ty-btn-sms:hover { background: #C9A94F; }
+
+/* On a laptop the text button is replaced by this line, at the same width */
+.ty-laptop-text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 52px;
+  border: 1px solid var(--ty-card-line);
+  border-radius: 8px;
+  background: var(--ty-card);
+  font-weight: 700;
+  font-size: 1.0625rem;
+  color: var(--ink);
+}
+
+.ty-laptop-text[hidden], .ty-btn[hidden] { display: none; }
+
+.ty-after-tap {
+  margin-top: 12px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--ty-green);
+  line-height: 1.4;
+}
+
+.ty-after-tap[hidden] { display: none; }
+
+.ty-reason {
+  margin-top: 10px;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: var(--ty-grey-text);
+}
+
+.ty-invite {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--ink);
+  text-align: left;
+}
+
+.ty-invite[hidden] { display: none; }
+.ty-invite-tick { flex: 0 0 18px; color: var(--ink); }
+
+.ty-resched {
+  margin-top: 10px;
+  font-size: 0.9375rem;
+  color: var(--ty-grey-text);
+}
+
+.ty-resched[hidden] { display: none; }
+
+.ty-resched a {
+  color: var(--ty-gold-small);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color var(--transition-fast);
+}
+
+.ty-resched a:hover { color: #6A5114; }
+
+.ty-watch {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  margin-top: 18px;
+  min-height: 44px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ty-grey-text);
+  transition: color var(--transition-fast);
+}
+
+.ty-watch[hidden] { display: none; }
+.ty-watch:hover { color: var(--ink); }
+
+/* Pre-call: what the call covers */
+.ty-oncall {
+  margin-top: 40px;
+  padding: 0 16px;
+}
+
+.ty-oncall[hidden] { display: none; }
+
+.ty-oncall .call-label {
+  font-size: 0.8125rem;
+  letter-spacing: 0.16em;
+  color: var(--ty-gold-small);
+  margin-bottom: 1.1rem;
+}
+
+.ty-oncall .call-list .tick { color: var(--ty-gold); }
+
+/* ---------- Sections ---------- */
+.ty-sec {
+  padding: 56px 0;
+}
+
+.ty-grey { background: var(--ty-grey); }
+.ty-white { background: var(--ty-white); }
+.ty-line-top { border-top: 1px solid var(--ty-line); }
+.ty-sec[hidden] { display: none; }
+
+.ty-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ty-gold-small);
+  margin-bottom: 12px;
+}
+
+.ty-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ty-gold);
+  flex: 0 0 6px;
+}
+
+.ty-h2 {
+  text-align: center;
+  font-size: 1.625rem;
+  line-height: 1.18;
+  letter-spacing: -0.025em;
+  font-weight: 800;
+  text-wrap: balance;
+  margin-bottom: 28px;
+}
+
+.ty-hl { color: var(--ty-gold-big); }
+
+/* Before your call */
+.ty-step { margin-top: 8px; }
+.ty-step + .ty-step { margin-top: 36px; }
+.ty-step[hidden] { display: none; }
+
+.ty-step-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  font-size: 1.1875rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+
+.ty-watched {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--ty-green);
+  background: var(--ty-green-pale);
+  border-radius: 999px;
+  padding: 3px 10px 3px 8px;
+}
+
+.ty-watched[hidden] { display: none; }
+
+.ty-step-line {
+  text-align: center;
+  color: var(--ty-grey-text);
+  font-size: 1rem;
+  margin-bottom: 20px;
+}
+
+.ty-video {
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.ty-video-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #0B1F16;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 18px 40px -20px rgba(18, 18, 18, 0.35);
+}
+
+.ty-video-wrap video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ty-video-play {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: rgba(7, 47, 30, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.ty-video-play:hover { background: rgba(7, 47, 30, 0.02); }
+
+.ty-video-badge {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 3px;
+}
+
+.ty-video-wrap.is-playing .ty-video-play { background: transparent; }
+.ty-video-wrap.is-playing .ty-video-badge { opacity: 0; }
+.ty-video-wrap.has-controls .ty-video-play { height: calc(100% - 56px); }
+
+.ty-video-title {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: var(--ty-grey-text);
+}
+
+/* Homework box */
+.ty-hw {
+  background: var(--ty-white);
+  border: 1px solid var(--ty-line);
+  border-radius: var(--ty-radius);
+  padding: 20px 18px;
+  margin-top: 16px;
+  text-align: left;
+}
+
+.ty-hw-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ty-hw-row + .ty-hw-row {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ty-line);
+}
+
+.ty-ocheck {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--ty-green);
+  color: var(--ty-green);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+
+.ty-hw-head, .ty-hw-confirm {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.4;
+}
+
+.ty-hw-confirm { font-weight: 500; padding-top: 1px; }
+.ty-hw-confirm strong { font-weight: 700; }
+
+.ty-arrows {
+  list-style: none;
+  margin: 10px 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ty-arrows li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1rem;
+  color: var(--ink);
+}
+
+.ty-arrows svg { flex: 0 0 16px; color: var(--ty-gold); }
+
+.ty-hw-note {
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: var(--ty-grey-text);
+}
+
+/* What you get: numbered, joined by a thin solid gold line down the left */
+.ty-links {
+  list-style: none;
+  position: relative;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.ty-links::before {
+  content: '';
+  position: absolute;
+  left: 15px;                  /* centre of a 32px circle */
+  top: 16px;
+  bottom: 16px;
+  width: 1px;
+  background: var(--ty-gold);
+}
+
+.ty-links li {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 0 0 26px;
+}
+
+.ty-links li:last-child { padding-bottom: 0; }
+
+.ty-num {
+  position: relative;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid var(--ty-gold);
+  background: var(--ty-card);
+  color: var(--ty-gold-small);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ty-link-name {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.3;
+  padding-top: 3px;
+}
+
+.ty-link-line {
+  font-size: 1rem;
+  color: var(--ty-grey-text);
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+.ty-closing {
+  margin-top: 34px;
+  text-align: center;
+}
+
+.ty-closing p {
+  color: var(--ty-grey-text);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.ty-closing p + p { margin-top: 4px; }
+
+/* Live demo */
+.ty-demo-line {
+  text-align: center;
+  color: var(--ty-grey-text);
+  margin: -10px 0 20px;
+}
+
+.ty-btn-demo {
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+/* Proof */
+.ty-proof { padding: 48px 0; }
+
+.ty-proof .faces-row img { border-color: var(--ty-white); }
+
+.ty-proof .client-faces {
+  margin-top: 0;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ty-proof-link {
+  margin-top: 14px;
+  text-align: center;
+}
+
+.ty-proof-link a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  font-weight: 700;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--ty-gold);
+  text-underline-offset: 4px;
+  transition: color var(--transition-fast);
+}
+
+.ty-proof-link a:hover { color: var(--ty-gold-small); }
+.ty-proof-link svg { color: var(--ty-gold); }
+
+/* ---------- Laptop ---------- */
+@media (min-width: 768px) {
+  .ty-top { padding: 28px 0 56px; }
+
+  .ty-logo img { width: 120px; }
+
+  .ty-tick { margin: 36px 0 34px; }
+
+  .ty-tick-ring,
+  .ty-tick-disc { width: 64px; height: 64px; }
+
+  .ty-tick-ring::before { inset: -32px; }
+
+  .ty-tick-disc svg { width: 30px; height: 30px; }
+
+  .ty-h1 { font-size: 2.5rem; margin-top: 28px; }
+
+  .ty-sub { font-size: 1.125rem; margin-bottom: 28px; }
+
+  .ty-card { padding: 22px 22px 22px; border-radius: 18px; }
+
+  .ty-card-time { font-size: 1.375rem; margin-bottom: 16px; }
+
+  .ty-card-lead { font-size: 1.0625rem; }
+
+  .ty-inner { padding: 20px 20px 16px; }
+
+  .ty-confirm-line { font-size: 1rem; }
+
+  .ty-sec { padding: 96px 0; }
+
+  .ty-proof { padding: 80px 0; }
+
+  .ty-h2 { font-size: 2.125rem; margin-bottom: 40px; }
+
+  .ty-links::before { left: 19px; }
+
+  .ty-num { flex-basis: 40px; width: 40px; height: 40px; font-size: 1.0625rem; }
+
+  .ty-hw { padding: 26px 28px; }
+
+  .ty-oncall { margin-top: 56px; }
+}
+
+/* A phone must show both confirm buttons on the first screen (390 x 664): keep the top tight */
+@media (max-width: 767px) {
+  .ty-top { padding-bottom: 32px; }
+  .ty-tick { margin: 22px 0 14px; }
+  .ty-tick-ring::before { inset: -20px; }
+  .ty-h1 { margin-top: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ty * { transition: none !important; scroll-behavior: auto !important; }
+  html.ty-html { scroll-behavior: auto; }
+}

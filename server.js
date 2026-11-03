@@ -66,8 +66,11 @@ app.get('/fit-and-book', (req, res) => {
   res.redirect('/');
 });
 
+// The page that opens right after a successful booking (also the pre-call page when opened directly)
 app.get('/thank-you', (req, res) => {
-  res.redirect('/');
+  res.setHeader('X-Robots-Tag', 'noindex');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile(path.join(__dirname, 'public', 'thank-you.html'));
 });
 
 // Function to dynamically reload latest .env config per request
@@ -87,7 +90,7 @@ function getLatestConfig() {
       }
     });
   }
-  let waNum = (process.env.WHATSAPP_NUMBER || '').replace(/[^\d]/g, '');
+  let waNum = (process.env.WHATSAPP_NUMBER || '919731173205').replace(/[^\d]/g, '');
   if (waNum.length === 10) {
     waNum = '91' + waNum;
   }
@@ -96,6 +99,10 @@ function getLatestConfig() {
     DESTINATION_EMAIL: process.env.DESTINATION_EMAIL || 'poojarisaiyash@gmail.com',
     FROM_EMAIL: process.env.FROM_EMAIL || 'shubhang@sahajta.com',
     WHATSAPP_NUMBER: waNum,
+    BRIEFING_VIDEO_URL: (process.env.BRIEFING_VIDEO_URL || '').trim(),
+    BRIEFING_VIDEO_POSTER: (process.env.BRIEFING_VIDEO_POSTER || '').trim(),
+    BRIEFING_VIDEO_CAPTIONS: (process.env.BRIEFING_VIDEO_CAPTIONS || '').trim(),
+    DEMO_WHATSAPP_NUMBER: (process.env.DEMO_WHATSAPP_NUMBER || '').replace(/[^\d]/g, ''),
     RESEND_API_KEY: process.env.RESEND_API_KEY || '',
     SMTP_HOST: process.env.SMTP_HOST || 'smtp.gmail.com',
     SMTP_PORT: process.env.SMTP_PORT || 465,
@@ -270,7 +277,11 @@ app.get('/api/config', (req, res) => {
   res.json({
     calendarEmbedUrl: config.CALENDAR_EMBED_URL,
     metaPixelId: config.META_PIXEL_ID,
-    whatsappNumber: config.WHATSAPP_NUMBER
+    whatsappNumber: config.WHATSAPP_NUMBER,
+    briefingVideoUrl: config.BRIEFING_VIDEO_URL,
+    briefingVideoPoster: config.BRIEFING_VIDEO_POSTER,
+    briefingVideoCaptions: config.BRIEFING_VIDEO_CAPTIONS,
+    demoWhatsappNumber: config.DEMO_WHATSAPP_NUMBER
   });
 });
 
@@ -377,6 +388,37 @@ app.get('/api/available-slots', async (req, res) => {
   return res.json({ date: dateStr, slots: [], slotsByDate: {}, availableDates: [] });
 });
 
+// Turns a wall-clock date and time in a named time zone into the real moment (UTC).
+// The picker shows times in the visitor's zone, so the booking has to be made in that same zone.
+function isValidTimeZone(tz) {
+  if (!tz || typeof tz !== 'string') return false;
+  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; } catch (e) { return false; }
+}
+
+function zonedTimeToUtc(dateStr, hours, minutes, tz) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const wallAsUtc = Date.UTC(y, m - 1, d, hours, minutes, 0);
+  const offsetAt = (ms) => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    }).formatToParts(new Date(ms)).reduce((o, p) => { o[p.type] = p.value; return o; }, {});
+    const asUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+    return asUtc - ms;
+  };
+  let guess = wallAsUtc - offsetAt(wallAsUtc);
+  guess = wallAsUtc - offsetAt(guess);
+  return new Date(guess);
+}
+
+// +91 98765 43210 for an Indian number, an international number as the form sent it
+function formatNotesPhone(raw) {
+  const v = String(raw || '').trim();
+  const digits = v.replace(/\D/g, '');
+  if (!v.startsWith('+') && digits.length === 10) return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
+  return v;
+}
+
 // API Route: Submit Lead Intake & Dispatch Email
 app.post('/api/submit-lead', async (req, res) => {
   const config = getLatestConfig();
@@ -400,6 +442,79 @@ app.post('/api/submit-lead', async (req, res) => {
       success: false,
       error: 'Missing required fields (name, email, company, whatsapp_number)'
     });
+  }
+
+  // Automatic Cal.com & Google Calendar Event Creation
+  const calApiKey = config.CAL_API_KEY || process.env.CAL_API_KEY || '';
+  let googleMeetUrl = null;
+  let calAccepted = false;
+  let rescheduleUrl = null;
+  let bookingUid = null;
+
+  if (calApiKey && req.body.slotDate && req.body.slotTime) {
+    try {
+      const datePart = req.body.slotDate;
+      const timeStr = req.body.slotTime;
+      const match = String(timeStr).match(/(\d+):(\d+)\s*(AM|PM)/i);
+      // Book in the visitor's own time zone (the one the times were shown in); no valid zone: India time
+      const bookingZone = isValidTimeZone(timezone) ? timezone : 'Asia/Kolkata';
+      if (match && /^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+        let hours = parseInt(match[1], 10);
+        const minutes = parseInt(match[2], 10);
+        const ampm = match[3].toUpperCase();
+        if (ampm === 'PM' && hours < 12) hours += 12;
+        if (ampm === 'AM' && hours === 12) hours = 0;
+        const startDt = zonedTimeToUtc(datePart, hours, minutes, bookingZone);
+
+        // Booking notes: four labelled lines, so Cal.com's invite shows them clearly
+        const notes = [
+          `Company or project: ${company}`,
+          `WhatsApp: ${formatNotesPhone(whatsapp_number)}`,
+          `What’s happening right now: ${q1_situation || 'N/A'}`,
+          `When they’d want it running: ${q2_urgency || 'N/A'}`
+        ].join('\n');
+
+        const calRes = await fetch('https://api.cal.com/v2/bookings', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${calApiKey}`,
+            'Content-Type': 'application/json',
+            'User-Agent': 'Sahajta-AI-Server/1.0 (Node.js)'
+          },
+          body: JSON.stringify({
+            start: startDt.toISOString(),
+            eventTypeId: 6659881,
+            timeZone: bookingZone,
+            language: 'en',
+            metadata: {},
+            responses: {
+              name: name,
+              email: email,
+              notes: notes
+            }
+          })
+        });
+
+        if (calRes.ok) {
+          calAccepted = true;
+          const calData = await calRes.json().catch(() => ({}));
+          googleMeetUrl = calData.data?.videoCallUrl || calData.data?.location || null;
+          bookingUid = calData.data?.uid || null;
+          rescheduleUrl = bookingUid ? `https://cal.com/reschedule/${encodeURIComponent(bookingUid)}` : null;
+          console.log(`✅ [Cal.com Sync Success]: Google Calendar booking created! ID: ${calData.data?.id} | Meet: ${googleMeetUrl}`);
+        } else {
+          const errBody = await calRes.text();
+          console.warn('⚠️ [Cal.com Booking Notice]:', errBody);
+        }
+      }
+    } catch (calErr) {
+      console.error('⚠️ [Cal.com Booking Error]:', calErr.message);
+    }
+  }
+
+  // A booking that Cal.com did not accept is a failed booking: tell the page, send nothing, create nothing
+  if (calApiKey && req.body.slotDate && req.body.slotTime && !calAccepted) {
+    return res.status(502).json({ success: false, error: 'The booking could not be made. Please pick a time again.' });
   }
 
   const timestamp = new Date().toISOString();
@@ -448,18 +563,8 @@ UTM Campaign:         ${utm_campaign || 'Direct / None'}
     });
   });
 
-  // Dispatch Prospect Confirmation & Strategy Call Email
-  dispatchProspectConfirmationEmail({
-    to: email,
-    name: name,
-    company: company,
-    bookedSlot: formattedSlot,
-    whatsappNumber: config.WHATSAPP_NUMBER,
-    from: config.FROM_EMAIL,
-    config: config
-  }).catch(err => {
-    console.error('⚠️ [Prospect Email Error]:', err.message);
-  });
+  // The lead's own emails come from Cal.com (booking email and invite) and, once built, our Gmail sender.
+  // The old "Strategy Call Confirmed" email is gone: it used words the brief bans and would double up.
 
   // Safe Odoo CRM Lead Creation
   if (config.ODOO_API_KEY) {
@@ -470,75 +575,19 @@ UTM Campaign:         ${utm_campaign || 'Direct / None'}
     console.log('ℹ️ [Odoo CRM]: No ODOO_API_KEY set in .env. Skipping Odoo sync.');
   }
 
-  // Automatic Cal.com & Google Calendar Event Creation
-  const calApiKey = config.CAL_API_KEY || process.env.CAL_API_KEY || '';
-  let googleMeetUrl = null;
-
-  if (calApiKey && req.body.slotDate && req.body.slotTime) {
-    try {
-      const datePart = req.body.slotDate;
-      const timeStr = req.body.slotTime;
-      const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
-      if (match) {
-        let hours = parseInt(match[1], 10);
-        const minutes = parseInt(match[2], 10);
-        const ampm = match[3].toUpperCase();
-        if (ampm === 'PM' && hours < 12) hours += 12;
-        if (ampm === 'AM' && hours === 12) hours = 0;
-        const hh = String(hours).padStart(2, '0');
-        const mm = String(minutes).padStart(2, '0');
-        
-        const isoString = `${datePart}T${hh}:${mm}:00+05:30`;
-        const startDt = new Date(isoString);
-
-        const calRes = await fetch('https://api.cal.com/v2/bookings', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${calApiKey}`,
-            'Content-Type': 'application/json',
-            'User-Agent': 'Sahajta-AI-Server/1.0 (Node.js)'
-          },
-          body: JSON.stringify({
-            start: startDt.toISOString(),
-            eventTypeId: 6659881,
-            timeZone: 'Asia/Kolkata',
-            language: 'en',
-            metadata: {},
-            responses: {
-              name: name,
-              email: email,
-              notes: `Company: ${company} | Phone: ${whatsapp_number} | Q1: ${q1_situation || 'N/A'} | Q2: ${q2_urgency || 'N/A'}`
-            }
-          })
-        });
-
-        if (calRes.ok) {
-          const calData = await calRes.json();
-          googleMeetUrl = calData.data?.videoCallUrl || calData.data?.location || null;
-          console.log(`✅ [Cal.com Sync Success]: Google Calendar booking created! ID: ${calData.data?.id} | Meet: ${googleMeetUrl}`);
-        } else {
-          const errBody = await calRes.text();
-          console.warn('⚠️ [Cal.com Booking Notice]:', errBody);
-        }
-      }
-    } catch (calErr) {
-      console.error('⚠️ [Cal.com Booking Error]:', calErr.message);
-    }
-  }
-
   // Direct Backend Meta Conversions API (CAPI) Dispatch (Awaited for Vercel serverless completion guarantee)
   const capiUserData = { name, email, whatsapp_number, company };
   const baseEventId = req.body.event_id || `lead_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   
   try {
     await sendMetaCapiEvent('Lead', req, capiUserData, {
-      content_name: 'Real Estate Strategy Call Lead',
+      content_name: 'Lead Conversion Clarity Call Lead',
       company: company
     }, baseEventId);
 
     if (bookedSlot && bookedSlot !== 'Pending calendar confirmation') {
       await sendMetaCapiEvent('Schedule', req, capiUserData, {
-        content_name: 'Strategy Call Slot Confirmed',
+        content_name: 'Lead Conversion Clarity Call Slot',
         booked_slot: bookedSlot
       }, `sched_${baseEventId}`);
     }
@@ -550,107 +599,10 @@ UTM Campaign:         ${utm_campaign || 'Direct / None'}
     success: true,
     message: 'Lead captured successfully and confirmation dispatched.',
     whatsappNumber: config.WHATSAPP_NUMBER,
+    rescheduleUrl,
     lead: { name, company, email, bookedSlot: formattedSlot }
   });
 });
-
-/**
- * Prospect Strategy Call Confirmation Email Dispatcher
- */
-async function dispatchProspectConfirmationEmail({ to, name, company, bookedSlot, whatsappNumber, from, config }) {
-  const firstName = name.split(' ')[0] || name;
-  const subject = `Strategy Call Confirmed — Enquiry-to-Site-Visit Engine for ${company}`;
-
-  const textBody = `Hi ${firstName},
-
-Your Enquiry-to-Site-Visit Engine strategy call for ${company} is officially confirmed!
-
-🗓 Scheduled Slot: ${bookedSlot}
-📍 Location: Video Meeting (Calendar link sent)
-
-Complete these 2 quick steps before our call:
-
-1. CONFIRM ON WHATSAPP:
-Send a quick message to our team at +${whatsappNumber} confirming you will attend:
-"Hi, I have booked my Enquiry-to-Site-Visit Engine strategy call and confirm that I will attend"
-
-2. PRE-CALL NUMBERS CHECKLIST:
-Please have the following numbers ready for your project over the last 30 days:
-• Total paid enquiries received
-• Average first-response time
-• Site visits booked
-• Site visits actually attended
-
-We look forward to speaking with you!
-
-Best regards,
-Sahajta AI Technical Team
-Enquiry-to-Site-Visit Engine
-https://sahajta.com
-`;
-
-  const htmlBody = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #111827; background-color: #F9FAFB; margin: 0; padding: 20px; }
-    .card { max-width: 580px; margin: 0 auto; background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 12px; padding: 32px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); }
-    .logo-header { color: #1B4332; font-size: 24px; font-weight: 700; font-family: Georgia, serif; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #F3F4F6; }
-    .badge { display: inline-block; background: rgba(27, 67, 50, 0.08); color: #1B4332; font-weight: 700; font-size: 13px; padding: 4px 12px; border-radius: 999px; margin-bottom: 16px; }
-    .slot-box { background: #FFFBEB; border-left: 4px solid #C8991A; padding: 16px; border-radius: 6px; margin: 20px 0; font-weight: 600; color: #92400E; }
-    .step-box { background: #F9FAFB; border: 1px solid #E5E7EB; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
-    .footer { font-size: 13px; color: #6B7280; margin-top: 28px; padding-top: 16px; border-top: 1px solid #F3F4F6; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="logo-header">Sahajta AI</div>
-    <span class="badge">✓ Strategy Call Confirmed</span>
-    <h2>Hi ${firstName},</h2>
-    <p>Your <strong>Enquiry-to-Site-Visit Engine</strong> strategy call for <strong>${company}</strong> is confirmed.</p>
-    
-    <div class="slot-box">
-      📅 <strong>Scheduled Slot:</strong> ${bookedSlot}
-    </div>
-
-    <h3>Complete these 2 steps before our call:</h3>
-
-    <div class="step-box">
-      <strong>1. Confirm On WhatsApp:</strong><br>
-      Please send a text to <strong>+${whatsappNumber}</strong> to confirm your attendance.
-    </div>
-
-    <div class="step-box">
-      <strong>2. Have Your 30-Day Numbers Ready:</strong>
-      <ul>
-        <li>Paid enquiries received</li>
-        <li>Average first-response time</li>
-        <li>Site visits booked &amp; attended</li>
-      </ul>
-    </div>
-
-    <p>Looking forward to connecting!</p>
-
-    <div class="footer">
-      <strong>Sahajta AI Technical Team</strong><br>
-      Enquiry-to-Site-Visit Engine &bull; <a href="https://sahajta.com" style="color: #1B4332;">www.sahajta.com</a>
-    </div>
-  </div>
-</body>
-</html>
-`;
-
-  return dispatchEmail({
-    to: to,
-    from: from,
-    subject: subject,
-    text: textBody,
-    html: htmlBody,
-    config: config
-  });
-}
 
 /**
  * Safe, Relational Odoo CRM JSON-RPC Lead Dispatcher

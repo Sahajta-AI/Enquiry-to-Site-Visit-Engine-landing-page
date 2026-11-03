@@ -34,7 +34,7 @@
   --transition-fast: 160ms var(--ease);
   --transition-normal: 280ms var(--ease);
 
-  /* Legacy names kept so the screenshot wall and the thank-you screen render as before */
+  /* Legacy names kept so the screenshot wall renders as before */
   --brand-forest: #0B422A;
   --brand-forest-dark: #072F1E;
   --brand-forest-light: rgba(11, 66, 42, 0.08);
@@ -1278,6 +1278,12 @@ video::-webkit-media-controls-overlay-play-button {
   color: var(--ink-mute);
 }
 
+.details-line {
+  margin: -0.75rem 0 1.25rem;
+  font-size: 0.9375rem;
+  color: var(--ink-mute);
+}
+
 .cal-status {
   padding: 2rem 0.5rem;
   text-align: center;
@@ -1484,207 +1490,6 @@ video::-webkit-media-controls-overlay-play-button {
 
 .slot-summary-box .btn-primary {
   width: 100%;
-}
-
-/* ==========================================================================
-   Thank-you screen (after a booking): unchanged
-   ========================================================================== */
-/* Post-Booking Thank You View Inside Modal */
-.thank-you-view {
-  text-align: center;
-  padding: 0.5rem 0;
-}
-
-.thank-you-icon {
-  width: 56px;
-  height: 56px;
-  background: var(--green);
-  color: var(--cream);
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin-bottom: 1.25rem;
-}
-
-.thank-you-title {
-  font-family: var(--font-heading);
-  font-size: clamp(1.7rem, 4vw, 2.3rem);
-  font-weight: 700;
-  line-height: 1.1;
-  letter-spacing: -0.03em;
-  margin-bottom: 0.6rem;
-  text-wrap: balance;
-}
-
-.thank-you-subtitle {
-  font-size: 1.0625rem;
-  color: var(--ink-soft);
-  line-height: 1.55;
-  margin-bottom: 1.5rem;
-}
-
-.booked-slot-pill {
-  display: inline-block;
-  background: var(--green-tint);
-  border: 1px solid rgba(11, 66, 42, 0.18);
-  color: var(--green);
-  font-weight: 600;
-  padding: 0.7rem 1.3rem;
-  border-radius: 999px;
-  font-size: 0.975rem;
-  margin-bottom: 1.5rem;
-}
-
-.cal-buttons-row {
-  display: flex;
-  justify-content: center;
-  gap: 0.75rem;
-  margin-bottom: 2.25rem;
-  flex-wrap: wrap;
-}
-
-.btn-cal {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1.5px solid var(--green);
-  color: var(--green);
-  padding: 0.7rem 1.25rem;
-  border-radius: 999px;
-  font-family: var(--font-sans);
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.btn-cal:hover {
-  background: var(--green);
-  color: var(--cream);
-}
-
-.precall-steps-box {
-  background: var(--cream-deep);
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  padding: 1.5rem;
-  text-align: left;
-  margin-bottom: 1.25rem;
-}
-
-.steps-box-title {
-  font-family: var(--font-heading);
-  font-size: 1.3rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--ink);
-  margin-bottom: 1.1rem;
-  text-align: center;
-}
-
-.precall-step-card {
-  background: var(--cream);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 1.15rem;
-  margin-bottom: 0.85rem;
-}
-
-.precall-step-card:last-child { margin-bottom: 0; }
-
-.precall-step-card.completed {
-  border-color: var(--green);
-  background: var(--green-tint);
-}
-
-.step-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.4rem;
-}
-
-.step-card-title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.step-card-text {
-  font-size: 0.9rem;
-  color: var(--ink-soft);
-  line-height: 1.5;
-  margin-bottom: 0.85rem;
-}
-
-.step-status-badge {
-  font-size: 0.875rem;
-  font-weight: 600;
-  padding: 0.25rem 0.65rem;
-  border-radius: 999px;
-  background: rgba(18, 18, 18, 0.07);
-  color: var(--ink-mute);
-  white-space: nowrap;
-}
-
-.precall-step-card.completed .step-status-badge {
-  background: var(--green);
-  color: var(--cream);
-}
-
-.btn-whatsapp-confirm {
-  display: inline-flex;
-  align-items: center;
-  background: var(--green);
-  color: var(--cream);
-  font-weight: 600;
-  font-size: 0.9rem;
-  padding: 0.7rem 1.35rem;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background var(--transition-fast);
-}
-
-.btn-whatsapp-confirm:hover {
-  background: var(--green-deep);
-  color: var(--cream);
-}
-
-.btn-precall {
-  min-height: 44px;
-  font-size: 0.9rem;
-  padding: 0.65rem 1.35rem;
-}
-
-.prep-numbers-box {
-  background: rgba(217, 183, 91, 0.14);
-  border: 1px solid rgba(199, 162, 70, 0.45);
-  border-radius: 16px;
-  padding: 1.15rem 1.4rem;
-  text-align: left;
-  font-size: 0.9rem;
-  color: var(--ink-soft);
-}
-
-.prep-numbers-box h5 {
-  font-size: 0.975rem;
-  font-weight: 600;
-  color: var(--ink);
-  margin-bottom: 0.4rem;
-}
-
-.prep-numbers-box ul {
-  padding-left: 1.25rem;
-  margin-top: 0.5rem;
-}
-
-.prep-numbers-box li {
-  margin-bottom: 0.3rem;
 }
 
 /* ==========================================================================
