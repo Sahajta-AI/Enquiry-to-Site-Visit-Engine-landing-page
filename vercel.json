@@ -1,44 +1,26 @@
 {
-  "version": 2,
-  "builds": [
+  "framework": null,
+  "buildCommand": "",
+  "outputDirectory": "public",
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" }
+  ],
+  "redirects": [
+    { "source": "/fit-and-book", "destination": "/", "permanent": false }
+  ],
+  "headers": [
     {
-      "src": "server.js",
-      "use": "@vercel/node",
-      "config": {
-        "excludeFiles": "public/**"
-      }
-    },
-    {
-      "src": "public/**",
-      "use": "@vercel/static"
+      "source": "/thank-you",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex" },
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
     }
   ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/server.js"
-    },
-    {
-      "src": "/fit-and-book",
-      "status": 302,
-      "headers": { "Location": "/" }
-    },
-    {
-      "src": "/thank-you",
-      "headers": { "X-Robots-Tag": "noindex", "Cache-Control": "no-cache, no-store, must-revalidate" },
-      "dest": "/public/thank-you.html"
-    },
-    {
-      "src": "/",
-      "dest": "/public/index.html"
-    },
-    {
-      "src": "/(privacy-policy|terms-and-conditions|cookie-policy|disclaimer|support|data-deletion)",
-      "dest": "/public/$1.html"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/public/$1"
+  "functions": {
+    "api/index.js": {
+      "excludeFiles": "{public/**,.env*}"
     }
-  ]
+  }
 }

@@ -96,7 +96,7 @@ function getLatestConfig() {
   }
 
   return {
-    DESTINATION_EMAIL: process.env.DESTINATION_EMAIL || 'poojarisaiyash@gmail.com',
+    DESTINATION_EMAIL: process.env.DESTINATION_EMAIL || 'shubhang@sahajta.com',
     FROM_EMAIL: process.env.FROM_EMAIL || 'shubhang@sahajta.com',
     WHATSAPP_NUMBER: waNum,
     BRIEFING_VIDEO_URL: (process.env.BRIEFING_VIDEO_URL || '').trim(),
@@ -213,7 +213,7 @@ async function sendMetaCapiEvent(eventName, req, userData = {}, customData = {},
           event_name: eventName,
           event_time: Math.floor(Date.now() / 1000),
           event_id: eventId || `capi_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-          event_source_url: req.headers.referer || 'https://sahajta-landing-page-brown.vercel.app/',
+          event_source_url: req.headers.referer || `https://${req.headers['x-forwarded-host'] || req.headers.host}/`,
           action_source: 'website',
           user_data: {
             em: userData.email ? [hashSha256(userData.email)] : undefined,
@@ -905,8 +905,12 @@ async function dispatchEmail({ to, from, subject, text, html, config, isRetry = 
   console.log(`ℹ️ [Email Logged for ${to}]: Subject: "${subject}".`);
 }
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`🚀 Sahajta AI Enquiry-to-Site-Visit Engine running at http://localhost:${PORT}`);
-  console.log(`  [✓] Landing Page: http://localhost:${PORT}/`);
-});
+// Start Server (local only; on Vercel, api/index.js imports the app instead)
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Sahajta AI Enquiry-to-Site-Visit Engine running at http://localhost:${PORT}`);
+    console.log(`  [✓] Landing Page: http://localhost:${PORT}/`);
+  });
+}
+
+module.exports = app;
