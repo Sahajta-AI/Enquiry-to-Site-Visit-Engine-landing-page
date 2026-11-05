@@ -239,6 +239,21 @@ test('part 7: bots (trap filled, sent too fast, made-up id) send nothing', async
   assert.strictEqual(published.length, 0);
 });
 
+test('part 7: ad-source keys are not saved while NEW_TRACKING is off, and are saved when it is on', async () => {
+  reset();
+  const a = lead();
+  await post('/api/lead', a);
+  assert.strictEqual((await store.get('lead:' + a.lead_event_id)).lead.fbp, undefined);
+  process.env.NEW_TRACKING = '1';
+  try {
+    const b = lead();
+    await post('/api/lead', b);
+    const kept = (await store.get('lead:' + b.lead_event_id)).lead;
+    assert.strictEqual(kept.fbp, 'fb.1.111');
+    assert.strictEqual(kept.fbc, 'fb.1.222.TEST123');
+  } finally { delete process.env.NEW_TRACKING; }
+});
+
 test('part 7: another website\'s Origin is refused', async () => {
   const r = await post('/api/lead', lead(), { Origin: 'https://evil.example' });
   assert.strictEqual(r.status, 403);
