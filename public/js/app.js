@@ -4,7 +4,8 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-  // State variables (this whole object is posted to /api/submit-lead: do not add keys)
+  // State variables (this whole object is posted to /api/submit-lead: add keys only on purpose)
+  // lead_event_id: this visit's id. It ties the booking to the details /api/lead keeps, so a booking stops any nudge.
   const wizardState = {
     currentStep: 1,
     q1_situation: '',
@@ -14,8 +15,48 @@ document.addEventListener('DOMContentLoaded', () => {
     email: '',
     whatsapp_number: '',
     bookedSlot: '',
+    lead_event_id: '',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   };
+
+  // Opened from a nudge email's link: { code, firstName }. The browser never holds their email, number or answers.
+  let resume = null;
+  // "Didn't book" signal: armed when "See open times" is pressed, disarmed by a booking
+  let leaveArmed = false;
+  let leaveSent = false;
+  let noTimesSent = false;
+  let formShownAt = 0;
+
+  function newId() {
+    try {
+      const a = new Uint8Array(12);
+      crypto.getRandomValues(a);
+      return Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
+    } catch (err) {
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+    }
+  }
+
+  function readCookie(name) {
+    const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  function postJson(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      keepalive: true
+    }).catch(() => {});
+  }
+
+  function beaconJson(url, body) {
+    try {
+      if (navigator.sendBeacon && navigator.sendBeacon(url, new Blob([JSON.stringify(body)], { type: 'application/json' }))) return;
+    } catch (err) {}
+    postJson(url, body);
+  }
 
   // Dynamic Meta Pixel Script Loader & Funnel Configuration
   fetch('/api/config')
@@ -149,6 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (modalBody) modalBody.scrollTop = 0;
 
     if (stepNumber === 3) {
+      if (!formShownAt) formShownAt = Date.now();
       // Track InitiateCheckout once, when the visitor reaches the contact details step
       trackOnce('InitiateCheckout', { content_name: 'IntakeCompleted' });
       // Start loading open times now so they show at once on the next screen
@@ -325,7 +367,52 @@ document.addEventListener('DOMContentLoaded', () => {
       console.warn('Meta pixel lead tracking notice:', err);
     }
 
+    // Keep this visit's details on the server for 24 hours (for the "Didn't book" email and the nudges)
+    if (!wizardState.lead_event_id) wizardState.lead_event_id = newId();
+    const trap = document.getElementById('field-website');
+    postJson('/api/lead', {
+      lead_event_id: wizardState.lead_event_id,
+      name: wizardState.name,
+      company: wizardState.company,
+      email: wizardState.email,
+      whatsapp_number: wizardState.whatsapp_number,
+      q1_situation: wizardState.q1_situation,
+      q2_urgency: wizardState.q2_urgency,
+      timezone: wizardState.timezone,
+      trap: trap ? trap.value : '',
+      form_ms: formShownAt ? Date.now() - formShownAt : 0,
+      fbp: readCookie('_fbp'),
+      fbc: readCookie('_fbc')
+    });
+
+    leaveArmed = true;
     goToStep(4);
+  }
+
+  // Left the page at the time step without booking: tell the server once (a short switch to another app counts)
+  function sendLeaveSignal() {
+    if (!leaveArmed || leaveSent || resume || !wizardState.lead_event_id) return;
+    const today = new Date().toISOString().slice(0, 10);
+    try { if (localStorage.getItem('sv_dnb') === today) return; } catch (err) {}
+    leaveSent = true;
+    try { localStorage.setItem('sv_dnb', today); } catch (err) {}
+    beaconJson('/api/lead-signal', { kind: 'didnt_book', lead_event_id: wizardState.lead_event_id });
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') sendLeaveSignal();
+  });
+  window.addEventListener('pagehide', sendLeaveSignal);
+
+  // No times in the whole 7 days: tell the server once. Shubhang WhatsApps these himself, so no nudges follow.
+  function sendNoTimesSignal() {
+    if (noTimesSent) return;
+    if (!resume && !wizardState.lead_event_id) return;
+    noTimesSent = true;
+    leaveArmed = false;
+    postJson('/api/lead-signal', resume
+      ? { kind: 'no_times', resume_code: resume.code }
+      : { kind: 'no_times', lead_event_id: wizardState.lead_event_id });
   }
 
   if (contactForm) {
@@ -392,6 +479,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     isSubmittingLead = false;
     picker.monthChecked = false;
+    picker.noTimesWeek = false;
     const today = new Date();
     pickerRender = fetchAndRenderCalendar;
 
@@ -432,7 +520,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // First time on this screen: if the current month has no open times, open the next month if it has some
+      // First time on this screen: if the current month has no open times, open the next month if it has some.
+      // If both months are empty, no times show in the whole 7 days: say so, and tell the server (once).
       if (!picker.monthChecked) {
         picker.monthChecked = true;
         if (monthData && !(monthData.availableDates || []).length) {
@@ -443,6 +532,9 @@ document.addEventListener('DOMContentLoaded', () => {
             picker.year = nextYear;
             picker.month = nextMonth;
             monthData = nextData;
+          } else if (nextData) {
+            picker.noTimesWeek = true;
+            sendNoTimesSignal();
           }
         }
       }
@@ -532,7 +624,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="time-slots-grid">${afternoonSlots.map(renderSlotBtn).join('')}</div>`;
         }
       } else {
-        slotsHtml = `<p class="cal-status">${msg('msgNone')}</p>`;
+        // Both months empty: the 7-day line. Only one empty month (the other has times): "No open times this month."
+        slotsHtml = `<p class="cal-status">${msg(picker.noTimesWeek ? 'msgNoneWeek' : 'msgNone')}</p>`;
       }
 
       const formattedSelectedDate = picker.selectedDate ? picker.selectedDate.toLocaleDateString('en-US', {
@@ -642,6 +735,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function handleSlotConfirmation(slotText) {
     wizardState.bookedSlot = slotText;
+    if (resume) {
+      // From a nudge's link: only the code and this visit's own time and ad cookies. The server has the rest.
+      submitLeadToBackend({
+        resume_code: resume.code,
+        slotDate: wizardState.slotDate,
+        slotTime: wizardState.slotTime,
+        bookedSlot: slotText,
+        timezone: wizardState.timezone,
+        page_url: window.location.origin + window.location.pathname,
+        fbp: readCookie('_fbp'),
+        fbc: readCookie('_fbc')
+      });
+      return;
+    }
     submitLeadToBackend(wizardState);
   }
 
@@ -678,8 +785,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // The booking details stay in this browser's session memory, never in the page address
+    leaveArmed = false; // they booked: never a "Didn't book" email
     const booked = {
-      firstName: (payload.name || '').trim().split(/\s+/)[0] || '',
+      // From a nudge's link the first name comes from /api/resume's reply
+      firstName: resume ? resume.firstName : ((payload.name || '').trim().split(/\s+/)[0] || ''),
       slotDate: payload.slotDate,
       slotTime: payload.slotTime,
       timezone: payload.timezone,
@@ -688,6 +797,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try { sessionStorage.setItem('sv_booked', JSON.stringify(booked)); } catch (err) {}
 
     // Reset the form so Back from /thank-you never shows the time step again
+    endResume();
     resetBookingForm();
 
     // Short pause so the Schedule event leaves the browser before the page changes
@@ -696,9 +806,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function resetBookingForm() {
     wizardState.currentStep = 1;
-    ['q1_situation', 'q2_urgency', 'name', 'company', 'email', 'whatsapp_number', 'bookedSlot', 'slotDate', 'slotTime'].forEach(k => {
+    ['q1_situation', 'q2_urgency', 'name', 'company', 'email', 'whatsapp_number', 'bookedSlot', 'slotDate', 'slotTime', 'lead_event_id'].forEach(k => {
       wizardState[k] = '';
     });
+    leaveArmed = false;
+    leaveSent = false;
+    noTimesSent = false;
+    formShownAt = 0;
     [nameInput, companyInput, emailInput, phoneInput, phoneIntlInput].forEach(el => {
       el.value = '';
       delete el.dataset.touched;
@@ -729,9 +843,71 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.persisted) {
       let booked = false;
       try { booked = !!sessionStorage.getItem('sv_booked'); } catch (err) {}
-      if (booked) resetBookingForm();
+      if (booked) { endResume(); resetBookingForm(); }
     }
   });
+
+  // ---- Opened from a nudge email's link (/?r={code}; the head script already took the code out of the address) ----
+  const welcomeLine = document.getElementById('welcome-line');
+  const startAgainRow = document.getElementById('start-again-row');
+  const btnStartAgain = document.getElementById('btn-start-again');
+
+  function showResumeParts(on) {
+    if (welcomeLine) {
+      welcomeLine.hidden = !on;
+      welcomeLine.textContent = on
+        ? (resume && resume.firstName ? msg('msgWelcome').replace('{name}', resume.firstName) : 'Welcome back.')
+        : '';
+    }
+    if (startAgainRow) startAgainRow.hidden = !on;
+    if (btnStep4Back) btnStep4Back.hidden = on; // no Back button: "Not you? Start again" is the only way back
+  }
+
+  function endResume() {
+    resume = null;
+    try { sessionStorage.removeItem('sv_resume'); } catch (err) {}
+    showResumeParts(false);
+  }
+
+  async function tryResume() {
+    let code = '';
+    try { code = sessionStorage.getItem('sv_resume') || ''; } catch (err) {}
+    if (!code) return;
+    let data = null;
+    try {
+      const res = await fetch('/api/resume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
+      });
+      data = await res.json();
+    } catch (err) {
+      return; // no connection: leave the normal page, keep the code for a reload
+    }
+    if (!data || !data.ok) {
+      try { sessionStorage.removeItem('sv_resume'); } catch (err) {} // anything else: the normal page, with no error
+      return;
+    }
+    resume = { code, firstName: String(data.firstName || '') };
+    showResumeParts(true);
+    wizardState.currentStep = 4;
+    openModal(null);
+  }
+
+  if (btnStartAgain) {
+    btnStartAgain.addEventListener('click', () => {
+      // Drops the code (it stays unused) and opens the form from the first question, as a new visit
+      endResume();
+      delete firedOnce.Lead;
+      delete firedOnce.InitiateCheckout;
+      resetBookingForm();
+      modalBackdrop.classList.add('active');
+      document.body.classList.add('modal-open');
+      goToStep(1);
+    });
+  }
+
+  tryResume();
 
   // Video Testimonial Interactive Controller (Auto-Pause Others & Full Native Controls)
   const allVideos = document.querySelectorAll('.video-wrapper video');

@@ -1631,3 +1631,31 @@ video::-webkit-media-controls-overlay-play-button {
     transition-delay: 0ms !important;
   }
 }
+
+/* Spam trap field: out of sight, out of the tab order */
+.hp-field {
+  position: absolute;
+  left: -10000px;
+  top: auto;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* Opened from a nudge's link */
+.welcome-line {
+  margin: 0 0 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.welcome-line[hidden],
+.start-again-row[hidden] {
+  display: none;
+}
+
+.start-again-row {
+  margin: 0.75rem 0 0;
+  text-align: center;
+}

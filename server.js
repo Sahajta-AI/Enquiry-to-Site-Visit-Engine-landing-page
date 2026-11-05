@@ -4,6 +4,13 @@ const fs = require('fs');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 const https = require('https');
+const lcfg = require('./lib/config');
+const ltime = require('./lib/time');
+const lstore = require('./lib/store');
+const lleads = require('./lib/leads');
+const lwebhook = require('./lib/webhook');
+const lscheduler = require('./lib/scheduler');
+const ltasks = require('./lib/tasks');
 
 // Load environment variables from .env if present
 const envPath = path.join(__dirname, '.env');
@@ -26,7 +33,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(express.json());
+// Keep the raw body: the Cal.com webhook's signature and the queue's signature are made over it
+app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf.toString('utf8'); } }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -195,8 +203,8 @@ async function sendMetaCapiEvent(eventName, req, userData = {}, customData = {},
     const cookies = req.headers.cookie || '';
     const fbpMatch = cookies.match(/_fbp=([^;]+)/);
     const fbcMatch = cookies.match(/_fbc=([^;]+)/);
-    const fbp = fbpMatch ? fbpMatch[1] : undefined;
-    const fbc = fbcMatch ? fbcMatch[1] : undefined;
+    const fbp = fbpMatch ? fbpMatch[1] : (userData.fbp || undefined);
+    const fbc = fbcMatch ? fbcMatch[1] : (userData.fbc || undefined);
 
     // Parse First & Last Name
     let firstName = userData.name || '';
@@ -294,6 +302,93 @@ app.post('/api/track-capi', async (req, res) => {
   res.json({ success });
 });
 
+// ---------------------------------------------------------------------------
+// Automatic emails (Thank-you Page Brief v1, parts 7 and 8)
+// ---------------------------------------------------------------------------
+
+// The details of this visit, kept for 24 hours, so "Didn't book" and the nudges never trust what the browser sends later
+app.post('/api/lead', async (req, res) => {
+  if (!lleads.originAllowed(req)) return res.status(403).json({ ok: false });
+  try {
+    const out = await lleads.saveLead(req.body || {});
+    return res.status(out.ok ? 200 : 400).json({ ok: out.ok });
+  } catch (err) {
+    console.error('⚠️ [/api/lead]:', err.message);
+    return res.status(200).json({ ok: false });
+  }
+});
+
+// The page was left at the time step without booking ("didnt_book"), or no times showed ("no_times")
+app.post('/api/lead-signal', async (req, res) => {
+  if (!lleads.originAllowed(req)) return res.status(403).json({ ok: false });
+  const b = req.body || {};
+  try {
+    const result = await lleads.handleSignal({ kind: b.kind, leadEventId: b.lead_event_id, resumeCode: b.resume_code });
+    return res.status(200).json({ ok: true, result });
+  } catch (err) {
+    console.error('⚠️ [/api/lead-signal]:', err.message);
+    return res.status(200).json({ ok: false });
+  }
+});
+
+// Opens a nudge's link: only the first name goes back, never the email, number or answers
+app.post('/api/resume', async (req, res) => {
+  if (!lleads.originAllowed(req)) return res.status(403).json({ ok: false });
+  try {
+    const n = await lleads.lookupResume(req.body && req.body.code);
+    if (!n) return res.status(200).json({ ok: false });
+    return res.status(200).json({ ok: true, firstName: ltasks.firstNameOf(n.lead.name) });
+  } catch (err) {
+    return res.status(200).json({ ok: false });
+  }
+});
+
+// Cal.com's "Booking Created" webhook (set on the Lead Conversion Clarity Call event only)
+app.post('/api/cal-webhook', async (req, res) => {
+  const secret = process.env.CAL_WEBHOOK_SECRET;
+  if (!secret) return res.status(503).json({ ok: false, error: 'CAL_WEBHOOK_SECRET is not set' });
+  if (!lwebhook.verifySignature(req.rawBody || '', req.headers['x-cal-signature-256'], secret)) {
+    return res.status(401).json({ ok: false });
+  }
+  try {
+    const out = await lwebhook.handle(req.body);
+    return res.status(out.status).json({ ok: true, result: out.result });
+  } catch (err) {
+    console.error('❌ [/api/cal-webhook]:', err.message);
+    return res.status(500).json({ ok: false });
+  }
+});
+
+// The delayed job calls this when something is due (second email, nudges, retries, the 10-minute check)
+app.post('/api/jobs/run', async (req, res) => {
+  if (!lscheduler.verifyQStash(req.rawBody || '', req.headers['upstash-signature'])) return res.status(401).json({ ok: false });
+  try {
+    const job = await lstore.get('job:' + (req.body && req.body.jobId));
+    const result = await ltasks.runJob(job);
+    return res.status(200).json({ ok: true, result });
+  } catch (err) {
+    console.error('❌ [/api/jobs/run]:', err.message);
+    return res.status(500).json({ ok: false }); // the queue tries again
+  }
+});
+
+// Used only if the scheduler is switched to Vercel Cron (SCHEDULER=cron): runs whatever is due
+app.get('/api/jobs/tick', async (req, res) => {
+  if (!lscheduler.verifyCron(req)) return res.status(401).json({ ok: false });
+  const ran = [];
+  try {
+    const due = await lstore.zdueBefore('jobs', Date.now());
+    for (const id of due) {
+      await lstore.zrem('jobs', id);
+      ran.push(await ltasks.runJob(await lstore.get('job:' + id)));
+    }
+    return res.status(200).json({ ok: true, ran });
+  } catch (err) {
+    console.error('❌ [/api/jobs/tick]:', err.message);
+    return res.status(500).json({ ok: false });
+  }
+});
+
 // Dynamic available slots endpoint (Supports date=YYYY-MM-DD or month=YYYY-MM)
 app.get('/api/available-slots', async (req, res) => {
   const dateStr = req.query.date;
@@ -312,7 +407,7 @@ app.get('/api/available-slots', async (req, res) => {
       const startTime = `${monthStr}-01T00:00:00.000Z`;
       const endTime = `${monthStr}-${String(lastDay).padStart(2, '0')}T23:59:59.000Z`;
 
-      const calRes = await fetch(`https://api.cal.com/v2/slots/available?startTime=${startTime}&endTime=${endTime}&eventTypeId=6659881&timeZone=${encodeURIComponent(userTimeZone)}`, {
+      const calRes = await fetch(`https://api.cal.com/v2/slots/available?startTime=${startTime}&endTime=${endTime}&eventTypeId=${lcfg.eventTypeId()}&timeZone=${encodeURIComponent(userTimeZone)}`, {
         headers: {
           'Authorization': `Bearer ${calApiKey}`,
           'User-Agent': 'Sahajta-AI-Server/1.0 (Node.js)'
@@ -356,7 +451,7 @@ app.get('/api/available-slots', async (req, res) => {
     try {
       const startTime = `${dateStr}T00:00:00.000Z`;
       const endTime = `${dateStr}T23:59:59.000Z`;
-      const calRes = await fetch(`https://api.cal.com/v2/slots/available?startTime=${startTime}&endTime=${endTime}&eventTypeId=6659881&timeZone=${encodeURIComponent(userTimeZone)}`, {
+      const calRes = await fetch(`https://api.cal.com/v2/slots/available?startTime=${startTime}&endTime=${endTime}&eventTypeId=${lcfg.eventTypeId()}&timeZone=${encodeURIComponent(userTimeZone)}`, {
         headers: {
           'Authorization': `Bearer ${calApiKey}`,
           'User-Agent': 'Sahajta-AI-Server/1.0 (Node.js)'
@@ -422,6 +517,32 @@ function formatNotesPhone(raw) {
 // API Route: Submit Lead Intake & Dispatch Email
 app.post('/api/submit-lead', async (req, res) => {
   const config = getLatestConfig();
+
+  // A booking from a nudge's link: the browser sends only resume_code and the time. The details come from the store.
+  const resumeCode = typeof req.body.resume_code === 'string' ? req.body.resume_code : '';
+  let nudgeRec = null;
+  if (resumeCode) {
+    const fail = (msg) => res.status(400).json({ success: false, error: msg || 'This link has expired. Please start again.' });
+    if (!/^[A-Za-z0-9_-]{16,64}$/.test(resumeCode)) return fail();
+    const n = await lstore.get('nudge:' + resumeCode);
+    if (!n) return fail();
+    if (n.used) {
+      // A retry with the same code for the same time gets that booking back
+      const b = n.bookingResult;
+      if (b && b.slotDate === req.body.slotDate && b.slotTime === req.body.slotTime) {
+        return res.status(200).json({ success: true, whatsappNumber: config.WHATSAPP_NUMBER, rescheduleUrl: b.rescheduleUrl || null, lead: { name: n.lead.name } });
+      }
+      return fail();
+    }
+    if (Date.now() - n.createdAt > lcfg.resumeCodeTtlMs()) return fail();
+    nudgeRec = n;
+    req.body = Object.assign({}, req.body, {
+      name: n.lead.name, company: n.lead.company, email: n.lead.email, whatsapp_number: n.lead.whatsapp_number,
+      q1_situation: n.lead.q1_situation, q2_urgency: n.lead.q2_urgency,
+      timezone: ltime.isValidTimeZone(req.body.timezone) ? req.body.timezone : n.lead.timezone
+    });
+  }
+
   const {
     q1_situation,
     q2_urgency,
@@ -483,10 +604,11 @@ app.post('/api/submit-lead', async (req, res) => {
           },
           body: JSON.stringify({
             start: startDt.toISOString(),
-            eventTypeId: 6659881,
+            eventTypeId: lcfg.eventTypeId(),
             timeZone: bookingZone,
             language: 'en',
-            metadata: {},
+            // nudge: yes, so the bookings that came from a nudge's link can be counted
+            metadata: nudgeRec ? { nudge: 'yes' } : {},
             responses: {
               name: name,
               email: email,
@@ -515,6 +637,19 @@ app.post('/api/submit-lead', async (req, res) => {
   // A booking that Cal.com did not accept is a failed booking: tell the page, send nothing, create nothing
   if (calApiKey && req.body.slotDate && req.body.slotTime && !calAccepted) {
     return res.status(502).json({ success: false, error: 'The booking could not be made. Please pick a time again.' });
+  }
+
+  // Nobody who booked gets a "Didn't book" email or a nudge; a used code stays used
+  try {
+    if (nudgeRec) {
+      await lstore.update('nudge:' + resumeCode, {
+        used: true, booked: true,
+        bookingResult: { slotDate: req.body.slotDate, slotTime: req.body.slotTime, rescheduleUrl }
+      });
+    }
+    await lleads.markBooked(nudgeRec ? nudgeRec.leadEventId : req.body.lead_event_id, email);
+  } catch (markErr) {
+    console.error('⚠️ [Mark booked error]:', markErr.message);
   }
 
   const timestamp = new Date().toISOString();
@@ -563,8 +698,8 @@ UTM Campaign:         ${utm_campaign || 'Direct / None'}
     });
   });
 
-  // The lead's own emails come from Cal.com (booking email and invite) and, once built, our Gmail sender.
-  // The old "Strategy Call Confirmed" email is gone: it used words the brief bans and would double up.
+  // The lead's own emails come from Cal.com (booking email and invite) and our Gmail sender, which Cal.com's
+  // "Booking Created" webhook starts (/api/cal-webhook). The old "Strategy Call Confirmed" email is gone.
 
   // Safe Odoo CRM Lead Creation
   if (config.ODOO_API_KEY) {
@@ -576,14 +711,24 @@ UTM Campaign:         ${utm_campaign || 'Direct / None'}
   }
 
   // Direct Backend Meta Conversions API (CAPI) Dispatch (Awaited for Vercel serverless completion guarantee)
-  const capiUserData = { name, email, whatsapp_number, company };
-  const baseEventId = req.body.event_id || `lead_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  
+  // From a nudge's link the ad cookies may be missing: use this visit's, else the ones saved when they first left
+  const capiUserData = {
+    name, email, whatsapp_number, company,
+    fbp: req.body.fbp || (nudgeRec && nudgeRec.lead.fbp) || undefined,
+    fbc: req.body.fbc || (nudgeRec && nudgeRec.lead.fbc) || undefined
+  };
+  const baseEventId = nudgeRec
+    ? `nudge_${nudgeRec.leadEventId}`
+    : (req.body.lead_event_id || req.body.event_id || `lead_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
+
   try {
-    await sendMetaCapiEvent('Lead', req, capiUserData, {
-      content_name: 'Lead Conversion Clarity Call Lead',
-      company: company
-    }, baseEventId);
+    // A booking from a nudge's link sends one Schedule and no second Lead: they sent it the first time
+    if (!nudgeRec) {
+      await sendMetaCapiEvent('Lead', req, capiUserData, {
+        content_name: 'Lead Conversion Clarity Call Lead',
+        company: company
+      }, baseEventId);
+    }
 
     if (bookedSlot && bookedSlot !== 'Pending calendar confirmation') {
       await sendMetaCapiEvent('Schedule', req, capiUserData, {

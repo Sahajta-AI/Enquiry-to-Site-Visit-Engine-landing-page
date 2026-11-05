@@ -34,6 +34,21 @@
   <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/main.css?v=2.4.0">
 
+  <!-- A nudge email's link is /?r={code}. Keep the code in session memory and take it out of the address
+       BEFORE the Meta Pixel (and Clarity, once added) load, so neither records it. -->
+  <script>
+    (function () {
+      try {
+        var u = new URL(window.location.href);
+        var r = u.searchParams.get('r');
+        if (r === null) return;
+        u.searchParams.delete('r');
+        if (/^[A-Za-z0-9_-]{16,64}$/.test(r)) sessionStorage.setItem('sv_resume', r);
+        window.history.replaceState(null, '', u.pathname + (u.search || '') + u.hash);
+      } catch (e) {}
+    })();
+  </script>
+
   <!-- Meta Pixel Base Code -->
   <script>
     !function(f,b,e,v,n,t,s)
@@ -336,6 +351,8 @@
   <div class="modal-backdrop" id="intake-modal" role="dialog" aria-modal="true" aria-label="Check if you qualify"
        data-msg-finding="Finding open times…"
        data-msg-none="No open times this month."
+       data-msg-none-week="No open times in the next 7 days. We’ll WhatsApp you a time."
+       data-msg-welcome="Welcome back, {name}."
        data-msg-load-error="We couldn’t load open times. Please check your connection and try again."
        data-msg-retry="Try again"
        data-msg-booking-error="We couldn’t confirm your booking. Please check your email for a confirmation before you try again."
@@ -440,6 +457,12 @@
               <button type="button" class="link-btn" id="toggle-india" hidden>Use an Indian number</button>
             </div>
 
+            <!-- Spam trap: people never see or fill this -->
+            <div class="hp-field" aria-hidden="true">
+              <label for="field-website">Website</label>
+              <input type="text" id="field-website" name="website" tabindex="-1" autocomplete="off">
+            </div>
+
             <p class="consent-line">By continuing, you agree to get WhatsApp messages, texts (SMS) and calls from Sahajta AI about your Lead Conversion Clarity Call. Our privacy policy, linked at the bottom of this page, explains how we use your details.</p>
 
             <div class="wizard-footer">
@@ -451,9 +474,11 @@
 
         <!-- STEP 4: time -->
         <div class="wizard-step" id="wizard-step-4" data-progress-label="Pick a time">
+          <p class="welcome-line" id="welcome-line" data-clarity-mask="true" hidden></p>
           <h3 class="wizard-question-title">Pick a time for your 45-minute Lead Conversion Clarity Call</h3>
           <p class="tz-line" id="tz-line"></p>
           <div id="cal-embed-container" aria-live="polite"></div>
+          <p class="start-again-row" id="start-again-row" hidden><button type="button" class="link-btn" id="btn-start-again">Not you? Start again</button></p>
           <div class="wizard-footer">
             <button type="button" class="btn-back" id="btn-step-4-back">Back</button>
           </div>
