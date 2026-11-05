@@ -49,25 +49,7 @@
     })();
   </script>
 
-  <!-- Meta Pixel Base Code -->
-  <script>
-    !function(f,b,e,v,n,t,s)
-    {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-    n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-    if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-    n.queue=[];t=b.createElement(e);t.async=!0;
-    t.src=v;s=b.getElementsByTagName(e)[0];
-    s.parentNode.insertBefore(t,s)}(window, document,'script',
-    'https://connect.facebook.net/en_US/fbevents.js');
-    fbq('set', 'autoConfig', false, '909588332098654');
-    fbq('init', '909588332098654');
-    fbq('track', 'PageView');
-  </script>
-  <noscript>
-    <img height="1" width="1" style="display:none"
-         src="https://www.facebook.com/tr?id=909588332098654&ev=PageView&noscript=1"/>
-  </noscript>
-  <!-- End Meta Pixel Base Code -->
+  <!-- The Meta Pixel and Clarity load from /js/tracking.js once /api/config replies: the ID comes from the server, never from this page -->
 </head>
 <body>
 
@@ -348,7 +330,7 @@
        BOOKING FORM (question 1, question 2, details, time). The thank-you is the page at /thank-you.
        Visible words live in data attributes so they are easy to edit.
        ========================================================================== -->
-  <div class="modal-backdrop" id="intake-modal" role="dialog" aria-modal="true" aria-label="Check if you qualify"
+  <div class="modal-backdrop" id="intake-modal" data-clarity-mask="True" role="dialog" aria-modal="true" aria-label="Check if you qualify"
        data-msg-finding="Finding open times…"
        data-msg-none="No open times this month."
        data-msg-none-week="No open times in the next 7 days. We’ll WhatsApp you a time."
@@ -457,10 +439,10 @@
               <button type="button" class="link-btn" id="toggle-india" hidden>Use an Indian number</button>
             </div>
 
-            <!-- Spam trap: people never see or fill this -->
+            <!-- Spam trap: hidden from people and screen readers, named so no browser autofills it -->
             <div class="hp-field" aria-hidden="true">
-              <label for="field-website">Website</label>
-              <input type="text" id="field-website" name="website" tabindex="-1" autocomplete="off">
+              <label for="field-hp-note">Leave this empty</label>
+              <input type="text" id="field-hp-note" name="hp_note" tabindex="-1" autocomplete="off">
             </div>
 
             <p class="consent-line">By continuing, you agree to get WhatsApp messages, texts (SMS) and calls from Sahajta AI about your Lead Conversion Clarity Call. Our privacy policy, linked at the bottom of this page, explains how we use your details.</p>
@@ -488,6 +470,7 @@
     </div>
   </div>
 
-  <script src="/js/app.js?v=2.4.0" defer></script>
+  <script src="/js/tracking.js?v=1.0.0" defer></script>
+  <script src="/js/app.js?v=2.5.0" defer></script>
 </body>
 </html>

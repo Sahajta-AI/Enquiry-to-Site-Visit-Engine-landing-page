@@ -22,24 +22,7 @@
   <link rel="stylesheet" href="/css/main.css?v=2.4.0">
   <link rel="stylesheet" href="/css/thank-you.css?v=1.0.0">
 
-  <!-- Meta Pixel Base Code (PageView only; Schedule fires in the booking form, never here) -->
-  <script>
-    !function(f,b,e,v,n,t,s)
-    {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-    n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-    if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-    n.queue=[];t=b.createElement(e);t.async=!0;
-    t.src=v;s=b.getElementsByTagName(e)[0];
-    s.parentNode.insertBefore(t,s)}(window, document,'script',
-    'https://connect.facebook.net/en_US/fbevents.js');
-    fbq('set', 'autoConfig', false, '909588332098654');
-    fbq('init', '909588332098654');
-    fbq('track', 'PageView');
-  </script>
-  <noscript>
-    <img height="1" width="1" style="display:none"
-         src="https://www.facebook.com/tr?id=909588332098654&ev=PageView&noscript=1"/>
-  </noscript>
+  <!-- The Meta Pixel loads from /js/tracking.js once /api/config replies (PageView only; Schedule fires in the booking form, never here) -->
 </head>
 <body class="ty">
   <main>
@@ -225,6 +208,7 @@
     </div>
   </footer>
 
-  <script src="/js/thank-you.js?v=1.0.0" defer></script>
+  <script src="/js/tracking.js?v=1.0.0" defer></script>
+  <script src="/js/thank-you.js?v=1.0.1" defer></script>
 </body>
 </html>

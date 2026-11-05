@@ -16,6 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
     whatsapp_number: '',
     bookedSlot: '',
     lead_event_id: '',
+    schedule_event_id: '',
+    consent_at: '',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   };
 
@@ -25,15 +27,20 @@ document.addEventListener('DOMContentLoaded', () => {
   let leaveArmed = false;
   let leaveSent = false;
   let noTimesSent = false;
-  let formShownAt = 0;
+  let formShownAt = 0;       // when question 1 first showed: form_ms counts from here
+  let formStartTracked = false;
+  let calendarViewTracked = false;
 
   function newId() {
+    try { if (crypto.randomUUID) return crypto.randomUUID(); } catch (err) {}
     try {
-      const a = new Uint8Array(12);
+      const a = new Uint8Array(16);
       crypto.getRandomValues(a);
-      return Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
+      a[6] = (a[6] & 0x0f) | 0x40; a[8] = (a[8] & 0x3f) | 0x80;
+      const h = Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
+      return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
     } catch (err) {
-      return Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); });
     }
   }
 
@@ -56,28 +63,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (navigator.sendBeacon && navigator.sendBeacon(url, new Blob([JSON.stringify(body)], { type: 'application/json' }))) return;
     } catch (err) {}
     postJson(url, body);
-  }
-
-  // Dynamic Meta Pixel Script Loader & Funnel Configuration
-  fetch('/api/config')
-    .then(res => res.json())
-    .then(data => {
-      if (data.calendarEmbedUrl) window.CALENDAR_EMBED_URL = data.calendarEmbedUrl;
-      if (data.whatsappNumber) window.WHATSAPP_NUMBER = data.whatsappNumber;
-
-      if (data.metaPixelId && data.metaPixelId.trim() !== '') {
-        initMetaPixel(data.metaPixelId.trim());
-      }
-    })
-    .catch(() => {});
-
-  function initMetaPixel(pixelId) {
-    if (typeof window.fbq === 'function') {
-      window.fbq('set', 'autoConfig', false, pixelId);
-      window.fbq('init', pixelId);
-      window.fbq('track', 'PageView');
-      console.log(`✅ [Meta Pixel Active]: Initialized with ID ${pixelId}`);
-    }
   }
 
   // DOM Elements
@@ -107,27 +92,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Events that must fire once, even after Back or closing and reopening the panel
   const firedOnce = {};
 
-  // Helper: Meta Pixel Tracker Safe Trigger (Standard + Custom Funnel Tracking)
-  function trackMetaEvent(eventName, params = {}, isCustom = false) {
-    if (typeof window.fbq === 'function') {
-      try {
-        if (isCustom) {
-          window.fbq('trackCustom', eventName, params);
-        } else {
-          window.fbq('track', eventName, params);
-        }
-        console.log(`[Meta Pixel Event]: ${eventName}`, params);
-      } catch (err) {
-        console.warn('[Meta Pixel Error]:', err.message);
-      }
-    }
-  }
-
-  function trackOnce(eventName, params) {
-    if (firedOnce[eventName]) return;
-    firedOnce[eventName] = true;
-    trackMetaEvent(eventName, params);
-  }
+  // Tracking goes through /js/tracking.js: one Pixel, and a helper that does nothing when the Pixel isn't loaded
+  const track = {
+    standard: (name, params, eventId) => { if (window.SVTrack) window.SVTrack.standard(name, params, eventId); },
+    // The new events (Backend and Tracking Brief, 5.4) go live only when NEW_TRACKING is on
+    event: (name, params, custom) => { if (window.SVTrack) window.SVTrack.newEvent(name, params, custom); }
+  };
 
   // 1. Modal toggle: reopening returns to the same screen
   let lastOpener = null;
@@ -149,9 +119,18 @@ document.addEventListener('DOMContentLoaded', () => {
     updateStickyButton();
   }
 
+  // Where the button is: hero, videos, wall, final or sticky
+  function buttonLocation(btn) {
+    if (btn.closest('#sticky-cta')) return 'sticky';
+    const sec = btn.closest('section');
+    const map = { hero: 'hero', testimonials: 'videos', wall: 'wall', final: 'final' };
+    return (sec && map[sec.id]) || 'page';
+  }
+
   ctaButtons.forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
+      track.event('BookCallClick', { location: buttonLocation(btn) });
       openModal(btn.closest('#sticky-cta') ? null : btn);
     });
   });
@@ -178,6 +157,9 @@ document.addEventListener('DOMContentLoaded', () => {
   function goToStep(stepNumber) {
     wizardState.currentStep = stepNumber;
 
+    if (stepNumber === 1 && !formShownAt) formShownAt = Date.now();
+    if (stepNumber === 1 && !formStartTracked) { formStartTracked = true; track.event('FormStart'); }
+
     [wizardStep1, wizardStep2, wizardStep3, wizardStep4].forEach(el => {
       if (el) el.classList.remove('active');
     });
@@ -190,9 +172,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (modalBody) modalBody.scrollTop = 0;
 
     if (stepNumber === 3) {
-      if (!formShownAt) formShownAt = Date.now();
-      // Track InitiateCheckout once, when the visitor reaches the contact details step
-      trackOnce('InitiateCheckout', { content_name: 'IntakeCompleted' });
       // Start loading open times now so they show at once on the next screen
       preloadMonthSlots();
     } else if (stepNumber === 4) {
@@ -209,6 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
         cards.forEach(c => c.classList.remove('selected'));
         card.classList.add('selected');
         wizardState[field] = card.dataset.value;
+        track.event('FormStep', { step: nextStep - 1 });
         setTimeout(() => goToStep(nextStep), 250);
       });
     });
@@ -344,6 +324,58 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // Trap and bot timer (7.2): a filled trap field, or a form sent in under 3 seconds since question 1, counts as a bot.
+  // A bot sends no Lead or Schedule from the browser.
+  const trapInput = document.getElementById('field-hp-note');
+  const formMs = () => (formShownAt ? Date.now() - formShownAt : 0);
+  const looksLikeBot = () => !!(trapInput && trapInput.value) || formMs() < 3000;
+
+  function onLeadAccepted(data) {
+    if (firedOnce.Lead || looksLikeBot() || !window.SVTrack) return;
+    const id = wizardState.lead_event_id;
+    window.SVTrack.config().then(cfg => {
+      // On production, a test booking never reaches the live Pixel from the browser
+      if (data.test && cfg.pixelKind === 'live') return;
+      if (firedOnce.Lead) return;
+      firedOnce.Lead = true;
+      track.standard('Lead', { content_name: 'Lead Conversion Clarity Call form' }, id);
+    });
+  }
+
+  // POST /api/lead with the details. Nothing waits for it. The browser's Lead fires only after an ok reply,
+  // and on no reply or an error it tries again in the background (up to twice), with the same ID.
+  async function sendLeadRecord(attempt) {
+    if (!window.SVTrack) return;
+    const body = {
+      lead_event_id: wizardState.lead_event_id,
+      name: wizardState.name,
+      company: wizardState.company,
+      email: wizardState.email,
+      whatsapp_number: wizardState.whatsapp_number,
+      q1_situation: wizardState.q1_situation,
+      q2_urgency: wizardState.q2_urgency,
+      timezone: wizardState.timezone,
+      page_url: window.location.href.split('#')[0],
+      sv_attrib: window.SVTrack.attribution(),
+      fbp: readCookie('_fbp'),
+      fbc: readCookie('_fbc'),
+      hp_note: trapInput ? trapInput.value : '',
+      form_ms: formMs()
+    };
+    try {
+      const res = await fetch('/api/lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        keepalive: true
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data && data.ok) { onLeadAccepted(data); return; }
+      if (res.status === 400) return; // the server refused the details themselves: retrying won't help
+    } catch (err) { /* no reply: try again below */ }
+    if (attempt < 2) setTimeout(() => sendLeadRecord(attempt + 1), 3000 + attempt * 2000);
+  }
+
   function submitContactForm() {
     const order = ['name', 'company', 'email', 'whatsapp'];
     let firstInvalid = null;
@@ -360,30 +392,10 @@ document.addEventListener('DOMContentLoaded', () => {
     wizardState.email = emailInput.value.trim();
     wizardState.whatsapp_number = phoneIsInternational ? phoneIntlInput.value.trim() : phoneInput.value;
 
-    // Track Lead once, when the contact details are submitted
-    try {
-      trackOnce('Lead', { content_name: 'ContactForm' });
-    } catch (err) {
-      console.warn('Meta pixel lead tracking notice:', err);
-    }
-
-    // Keep this visit's details on the server for 24 hours (for the "Didn't book" email and the nudges)
+    // Keep this visit's checked details on the server for 24 hours, and send Lead from there too (shared event ID)
     if (!wizardState.lead_event_id) wizardState.lead_event_id = newId();
-    const trap = document.getElementById('field-website');
-    postJson('/api/lead', {
-      lead_event_id: wizardState.lead_event_id,
-      name: wizardState.name,
-      company: wizardState.company,
-      email: wizardState.email,
-      whatsapp_number: wizardState.whatsapp_number,
-      q1_situation: wizardState.q1_situation,
-      q2_urgency: wizardState.q2_urgency,
-      timezone: wizardState.timezone,
-      trap: trap ? trap.value : '',
-      form_ms: formShownAt ? Date.now() - formShownAt : 0,
-      fbp: readCookie('_fbp'),
-      fbc: readCookie('_fbc')
-    });
+    wizardState.consent_at = new Date().toISOString(); // when they pressed "See open times", under the consent line
+    sendLeadRecord(0);
 
     leaveArmed = true;
     goToStep(4);
@@ -541,6 +553,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const availableDates = monthData?.availableDates || [];
       const slotsByDate = monthData?.slotsByDate || {};
+
+      if (availableDates.length > 0 && !calendarViewTracked) {
+        calendarViewTracked = true;
+        track.event('CalendarView');
+      }
 
       // Select the first day with open times, so the times show without an extra tap
       if (availableDates.length > 0) {
@@ -735,21 +752,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function handleSlotConfirmation(slotText) {
     wizardState.bookedSlot = slotText;
+    // The Schedule event ID is made before the booking call. A retry reuses it, so Meta counts it once.
+    if (!wizardState.schedule_event_id) wizardState.schedule_event_id = newId();
+    const common = {
+      schedule_event_id: wizardState.schedule_event_id,
+      page_url: window.location.href.split('#')[0],
+      sv_attrib: window.SVTrack ? window.SVTrack.attribution() : {},
+      fbp: readCookie('_fbp'),
+      fbc: readCookie('_fbc')
+    };
     if (resume) {
       // From a nudge's link: only the code and this visit's own time and ad cookies. The server has the rest.
-      submitLeadToBackend({
+      submitLeadToBackend(Object.assign({
         resume_code: resume.code,
         slotDate: wizardState.slotDate,
         slotTime: wizardState.slotTime,
         bookedSlot: slotText,
-        timezone: wizardState.timezone,
-        page_url: window.location.origin + window.location.pathname,
-        fbp: readCookie('_fbp'),
-        fbc: readCookie('_fbc')
-      });
+        timezone: wizardState.timezone
+      }, common));
       return;
     }
-    submitLeadToBackend(wizardState);
+    submitLeadToBackend(Object.assign({}, wizardState, common, {
+      hp_note: trapInput ? trapInput.value : '',
+      form_ms: formMs()
+    }));
   }
 
   async function submitLeadToBackend(payload) {
@@ -777,11 +803,13 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Schedule fires once, here, after a booking succeeds. The /thank-you page never fires it.
-    trackMetaEvent('Schedule', {
-      content_name: 'LeadConversionClarityCallBooked',
-      value: 1.00,
-      currency: 'USD'
+    // Schedule fires once, here, after a booking succeeds, with the same ID the server uses. The /thank-you page never fires it.
+    // A bot sends nothing, and on production a test booking never reaches the live Pixel from the browser.
+    const scheduleId = payload.schedule_event_id;
+    if (window.SVTrack) window.SVTrack.config().then(cfg => {
+      const isBot = !resume && ((payload.hp_note) || !(Number(payload.form_ms) >= 3000));
+      if (isBot || (result && result.test && cfg.pixelKind === 'live')) return;
+      track.standard('Schedule', { content_name: 'Lead Conversion Clarity Call' }, scheduleId);
     });
 
     // The booking details stay in this browser's session memory, never in the page address
@@ -806,13 +834,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function resetBookingForm() {
     wizardState.currentStep = 1;
-    ['q1_situation', 'q2_urgency', 'name', 'company', 'email', 'whatsapp_number', 'bookedSlot', 'slotDate', 'slotTime', 'lead_event_id'].forEach(k => {
+    ['q1_situation', 'q2_urgency', 'name', 'company', 'email', 'whatsapp_number', 'bookedSlot', 'slotDate', 'slotTime', 'lead_event_id', 'schedule_event_id', 'consent_at'].forEach(k => {
       wizardState[k] = '';
     });
     leaveArmed = false;
     leaveSent = false;
     noTimesSent = false;
     formShownAt = 0;
+    formStartTracked = false;
+    calendarViewTracked = false;
+    delete firedOnce.Lead;
     [nameInput, companyInput, emailInput, phoneInput, phoneIntlInput].forEach(el => {
       el.value = '';
       delete el.dataset.touched;
@@ -929,6 +960,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     video.addEventListener('play', () => {
+      if (!video.dataset.tracked) {
+        video.dataset.tracked = '1';
+        // The client's first name, from the poster file name (for example /videos/rahul-jain.webp -> Rahul)
+        let who = '';
+        try { who = new URL(video.poster, window.location.href).pathname.split('/').pop().split('.')[0].split('-')[0]; } catch (err) {}
+        who = who.charAt(0).toUpperCase() + who.slice(1);
+        if (who) track.event('TestimonialPlay', { name: who });
+      }
       // Pause any other video testimonials on the page
       allVideos.forEach(otherVideo => {
         if (otherVideo !== video && !otherVideo.paused) {
@@ -946,6 +985,29 @@ document.addEventListener('DOMContentLoaded', () => {
       if (wrapper) wrapper.classList.remove('is-playing');
     });
   });
+
+  // The sales video (once it is on the page, with id="sales-video"): ViewContent at the first start,
+  // VideoProgress at 25, 50, 75 and 95 percent (each once)
+  const salesVideo = document.getElementById('sales-video');
+  if (salesVideo) {
+    let started = false;
+    const reached = {};
+    salesVideo.addEventListener('play', () => {
+      if (started) return;
+      started = true;
+      track.event('ViewContent', { content_name: 'Sales video' }, false);
+    });
+    salesVideo.addEventListener('timeupdate', () => {
+      if (!salesVideo.duration || !isFinite(salesVideo.duration)) return;
+      const pct = (salesVideo.currentTime / salesVideo.duration) * 100;
+      [25, 50, 75, 95].forEach(mark => {
+        if (pct >= mark && !reached[mark]) {
+          reached[mark] = true;
+          track.event('VideoProgress', { percent: mark });
+        }
+      });
+    });
+  }
 
   // Video carousel arrows
   const videoGrid = document.getElementById('video-grid');
@@ -1003,6 +1065,4 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Initial Meta Pixel PageView trigger
-  trackMetaEvent('PageView');
 });

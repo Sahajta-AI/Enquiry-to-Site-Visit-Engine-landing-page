@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en-IN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Tracking test | Sahajta AI</title>
+  <!-- Private page: no link to it anywhere, not listed in robots.txt. No Clarity here. -->
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; background: #F7F7F2; color: #121212; }
+    main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+    h1 { font-size: 1.5rem; margin: 0 0 4px; }
+    h2 { font-size: 1.05rem; margin: 28px 0 8px; }
+    p { margin: 6px 0; line-height: 1.5; }
+    .muted { color: #6B6B66; font-size: 0.9rem; }
+    .card { background: #fff; border: 1px solid #E6E1CF; border-radius: 12px; padding: 16px; margin-top: 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    button { font: inherit; min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid #D9B75B; background: #D9B75B; color: #121212; font-weight: 600; cursor: pointer; }
+    button.secondary { background: #fff; border-color: #E6E1CF; }
+    button.danger { background: #fff; border-color: #B42318; color: #B42318; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    input[type=password] { font: inherit; min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid #E6E1CF; min-width: 240px; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+    td { padding: 6px 8px; border-bottom: 1px solid #F0EDE0; }
+    td:first-child { color: #6B6B66; width: 52%; }
+    #log { background: #121212; color: #E8E8E8; border-radius: 12px; padding: 12px; font: 0.82rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; min-height: 120px; max-height: 420px; overflow: auto; white-space: pre-wrap; }
+    [hidden] { display: none !important; }
+    .live-banner { background: #FFF3E0; border: 1px solid #F0B429; border-radius: 12px; padding: 12px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Tracking test</h1>
+  <p class="muted">Sends test events to the Sandbox Pixel, from the browser and from the server, with the same event IDs. Nothing here makes a Cal.com booking.</p>
+
+  <section class="card" id="lock">
+    <label for="pw"><strong>Password</strong></label>
+    <div class="row">
+      <input type="password" id="pw" autocomplete="off">
+      <button type="button" id="unlock">Unlock</button>
+    </div>
+    <p class="muted" id="lock-msg" role="status"></p>
+  </section>
+
+  <div id="app" hidden>
+    <h2>This page right now</h2>
+    <div class="card"><table id="status"></table></div>
+
+    <div id="live-banner" class="live-banner" hidden>
+      <strong>Live Pixel: final check.</strong> This page loaded the LIVE Pixel. The only thing it sends is one custom event, TrackingCheck, from the browser and from the server, with one event ID and the live test code. Never a Lead or a Schedule.
+    </div>
+
+    <div id="sandbox-panel">
+      <h2>Events (Sandbox)</h2>
+      <p class="muted">Lead and Schedule go from the browser and the server with one event ID. QualifiedBooking is server only. The rest are browser only.</p>
+      <div class="row" id="events">
+        <button type="button" data-ev="PageView">PageView</button>
+        <button type="button" data-ev="Lead">Lead</button>
+        <button type="button" data-ev="Schedule">Schedule</button>
+        <button type="button" data-ev="QualifiedBooking">QualifiedBooking (server)</button>
+      </div>
+      <p class="muted" style="margin-top:14px">New events (browser only):</p>
+      <div class="row" id="new-events">
+        <button type="button" class="secondary" data-ev="ViewContent">ViewContent</button>
+        <button type="button" class="secondary" data-ev="VideoProgress">VideoProgress</button>
+        <button type="button" class="secondary" data-ev="BookCallClick">BookCallClick</button>
+        <button type="button" class="secondary" data-ev="FormStart">FormStart</button>
+        <button type="button" class="secondary" data-ev="FormStep">FormStep</button>
+        <button type="button" class="secondary" data-ev="CalendarView">CalendarView</button>
+        <button type="button" class="secondary" data-ev="TestimonialPlay">TestimonialPlay</button>
+      </div>
+      <h2>Full journey</h2>
+      <p class="muted">PageView, then Lead, then Schedule and QualifiedBooking, with a dummy lead (Test Lead). No Cal.com booking.</p>
+      <div class="row"><button type="button" id="journey">Run the full journey</button></div>
+    </div>
+
+    <div id="live-panel" hidden>
+      <div class="row"><button type="button" class="danger" id="live-send">Send TrackingCheck to the live Pixel</button></div>
+    </div>
+
+    <h2>Switch</h2>
+    <div class="row">
+      <button type="button" class="secondary" id="to-live" hidden>Live Pixel: final check (production only)</button>
+      <button type="button" class="secondary" id="to-sandbox" hidden>Back to the Sandbox</button>
+    </div>
+
+    <h2>Log</h2>
+    <div class="row"><button type="button" class="secondary" id="copy">Copy log</button><button type="button" class="secondary" id="clear">Clear</button></div>
+    <div id="log" role="log" aria-live="polite" style="margin-top:8px"></div>
+    <p class="muted">Meta doesn't answer the browser, so check that side in Events Manager: open this page from the Test events tab of the Pixel you're testing (Test browser events: paste this page's address, then open it). Each Lead and Schedule (or TrackingCheck) then shows from both the browser and the server, with the same event ID, and Meta counts it once.</p>
+  </div>
+</main>
+<script src="/js/tracking-test.js?v=1.0.0" defer></script>
+</body>
+</html>

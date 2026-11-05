@@ -158,3 +158,48 @@ test('Gmail MIME: reply headers, HTML with a plain copy, non-ASCII safe', () => 
   assert.match(raw, /text\/plain; charset="UTF-8"/);
   assert.match(raw, /text\/html; charset="UTF-8"/);
 });
+
+const metaLib = require('../lib/meta');
+const qualify = require('../lib/qualify');
+const bookingmeta = require('../lib/bookingmeta');
+
+test('5.3 hashing: email, phone, names exactly as the brief says', () => {
+  const sha = (v) => require('crypto').createHash('sha256').update(v).digest('hex');
+  assert.strictEqual(metaLib.hashEmail('  Rohan@Example.COM '), sha('rohan@example.com'));
+  assert.strictEqual(metaLib.hashPhone('9876543210'), sha('919876543210'));          // 91 and the 10 digits
+  assert.strictEqual(metaLib.hashPhone('+971 50 123 4567'), sha('971501234567'));
+  assert.strictEqual(metaLib.hashPhone('+9710501234567'), sha('9710501234567'));      // digits as given with a +
+  assert.strictEqual(metaLib.hashPhone(''), undefined);
+  assert.deepStrictEqual(metaLib.nameParts('Rohan  Mehta-Rao'), { fn: 'rohan', ln: 'mehtarao' });
+  assert.deepStrictEqual(metaLib.nameParts('Priya'), { fn: 'priya', ln: '' });
+  assert.deepStrictEqual(metaLib.nameParts("D'Souza Ann"), { fn: 'dsouza', ln: 'ann' });
+});
+
+test('5.3 fbc: the cookie wins; otherwise fb.1.{first_seen ms}.{fbclid} with fbclid exactly as received', () => {
+  assert.strictEqual(metaLib.buildFbc('fb.1.1.COOKIE', { fbclid: 'x' }), 'fb.1.1.COOKIE');
+  const ms = Date.parse('2026-11-05T10:00:00.000Z');
+  assert.strictEqual(metaLib.buildFbc('', { fbclid: 'AbC_xYz', first_seen: '2026-11-05T10:00:00.000Z' }), `fb.1.${ms}.AbC_xYz`);
+  assert.strictEqual(metaLib.buildFbc('', {}), undefined);
+});
+
+test('5.5 qualified: both answers fit, compared exactly', () => {
+  const fit1 = 'We run paid ads but leads go cold because follow-up is slow';
+  const fit1b = 'We run paid ads but too few leads book or attend site visits';
+  assert.ok(qualify.isQualified(fit1, 'As soon as possible'));
+  assert.ok(qualify.isQualified(fit1b, 'Within the next 30 days'));
+  assert.ok(!qualify.isQualified(fit1, 'Within the next 1 to 3 months'));
+  assert.ok(!qualify.isQualified('We are still planning or exploring', 'As soon as possible'));
+  assert.ok(!qualify.isQualified(fit1 + ' ', 'As soon as possible'), 'exact match only');
+  assert.ok(qualify.q1Fits(fit1) && !qualify.q2Fits('x'));
+});
+
+test('6.2 Cal.com metadata limits: at most 50 keys, keys up to 40 characters, values up to 500', () => {
+  const big = {};
+  for (let i = 0; i < 60; i++) big['k' + i] = 'v';
+  big['x'.repeat(41)] = 'too long a key';
+  big.long = 'y'.repeat(900);
+  const out = bookingmeta.limit(big);
+  assert.ok(Object.keys(out).length <= 50);
+  assert.ok(!('x'.repeat(41) in out));
+  assert.strictEqual(out.long, undefined === out.long ? undefined : 'y'.repeat(500));
+});

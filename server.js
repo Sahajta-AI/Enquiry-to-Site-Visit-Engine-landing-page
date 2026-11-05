@@ -3,7 +3,6 @@ const path = require('path');
 const fs = require('fs');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
-const https = require('https');
 const lcfg = require('./lib/config');
 const ltime = require('./lib/time');
 const lstore = require('./lib/store');
@@ -11,6 +10,13 @@ const lleads = require('./lib/leads');
 const lwebhook = require('./lib/webhook');
 const lscheduler = require('./lib/scheduler');
 const ltasks = require('./lib/tasks');
+const lafter = require('./lib/after');
+const lalerts = require('./lib/alerts');
+const lmeta = require('./lib/meta');
+const lqualify = require('./lib/qualify');
+const lcal = require('./lib/cal');
+const lbookingmeta = require('./lib/bookingmeta');
+const ltrackingtest = require('./lib/trackingtest');
 
 // Load environment variables from .env if present
 const envPath = path.join(__dirname, '.env');
@@ -36,6 +42,10 @@ const PORT = process.env.PORT || 3000;
 // Keep the raw body: the Cal.com webhook's signature and the queue's signature are made over it
 app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf.toString('utf8'); } }));
 app.use(express.urlencoded({ extended: true }));
+app.use((req, res, next) => {
+  if (/^\/tracking-test(\.html)?$/.test(req.path)) res.setHeader('X-Robots-Tag', 'noindex');
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Clean Single-Page Routes (Legacy routes redirect to /)
@@ -72,6 +82,24 @@ app.get('/data-deletion', (req, res) => {
 
 app.get('/fit-and-book', (req, res) => {
   res.redirect('/');
+});
+
+// The private test page: no link to it anywhere, noindex, not listed in robots.txt. Its endpoint checks a password every time.
+app.get('/tracking-test', (req, res) => {
+  res.setHeader('X-Robots-Tag', 'noindex');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile(path.join(__dirname, 'public', 'tracking-test.html'));
+});
+
+app.post('/api/tracking-test', async (req, res) => {
+  if (!lleads.originAllowed(req)) return res.status(403).json({ ok: false, code: 'origin' });
+  try {
+    const out = await ltrackingtest.handle(req);
+    res.status(out.status).json(out.body);
+  } catch (err) {
+    console.error('⚠️ [/api/tracking-test]:', err.message);
+    res.status(500).json({ ok: false });
+  }
 });
 
 // The page that opens right after a successful booking (also the pre-call page when opened directly)
@@ -120,171 +148,20 @@ function getLatestConfig() {
     ODOO_DB: process.env.ODOO_DB || 'sahajta',
     ODOO_USER: process.env.ODOO_USER || 'shubhangsethi@gmail.com',
     ODOO_API_KEY: process.env.ODOO_API_KEY || '',
-    CALENDAR_EMBED_URL: process.env.CALENDAR_EMBED_URL || 'https://cal.com/shubhang-sethi/enquiry-to-site-visit-engine',
-    CAL_API_KEY: process.env.CAL_API_KEY || '',
-    META_PIXEL_ID: process.env.META_PIXEL_ID || '909588332098654',
-    META_CAPI_TOKEN: process.env.META_CAPI_TOKEN || ''
+    CAL_API_KEY: process.env.CAL_API_KEY || ''
   };
 }
 
-// SHA-256 Hashing Helpers for Meta CAPI Event Match Quality (EMQ > 8.5)
-function hashSha256(value) {
-  if (!value) return undefined;
-  return crypto.createHash('sha256').update(String(value).trim().toLowerCase()).digest('hex');
-}
-
-function normalizePhone(phone) {
-  if (!phone) return undefined;
-  const digits = String(phone).replace(/\D/g, '');
-  return digits.length >= 7 ? digits : undefined;
-}
-
-// Helper: Native HTTPS POST Request for Meta Graph API
-function postJsonHttps(urlStr, bodyObj) {
-  return new Promise((resolve, reject) => {
-    const parsedUrl = new URL(urlStr);
-    const postData = JSON.stringify(bodyObj);
-
-    const options = {
-      hostname: parsedUrl.hostname,
-      port: 443,
-      path: parsedUrl.pathname + parsedUrl.search,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Sahajta-AI-Server/1.0 (Node.js/CAPI)',
-        'Content-Length': Buffer.byteLength(postData)
-      },
-      timeout: 10000
-    };
-
-    const req = https.request(options, (res) => {
-      let responseBody = '';
-      res.on('data', (chunk) => { responseBody += chunk; });
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(responseBody);
-          resolve({ status: res.statusCode, data: parsed });
-        } catch (e) {
-          resolve({ status: res.statusCode, data: responseBody });
-        }
-      });
-    });
-
-    req.on('error', (err) => reject(err));
-    req.on('timeout', () => {
-      req.destroy();
-      reject(new Error('HTTPS Request Timed Out'));
-    });
-
-    req.write(postData);
-    req.end();
-  });
-}
-
-// Direct Backend Meta Conversions API (CAPI) Engine
-async function sendMetaCapiEvent(eventName, req, userData = {}, customData = {}, eventId = null) {
-  const config = getLatestConfig();
-  const pixelId = config.META_PIXEL_ID;
-  const apiToken = process.env.META_CAPI_TOKEN || config.META_CAPI_TOKEN || '';
-
-  if (!pixelId || !apiToken) {
-    console.log(`ℹ️ [Meta CAPI Notice]: Skipping CAPI "${eventName}" (META_PIXEL_ID or META_CAPI_TOKEN not configured)`);
-    return false;
-  }
-
-  try {
-    // Extract Client IP and User Agent for high Meta Event Match Quality
-    const rawIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '';
-    const clientIp = rawIp.split(',')[0].trim();
-    const clientUserAgent = req.headers['user-agent'] || '';
-
-    // Extract Meta Cookies (_fbp, _fbc) from request
-    const cookies = req.headers.cookie || '';
-    const fbpMatch = cookies.match(/_fbp=([^;]+)/);
-    const fbcMatch = cookies.match(/_fbc=([^;]+)/);
-    const fbp = fbpMatch ? fbpMatch[1] : (userData.fbp || undefined);
-    const fbc = fbcMatch ? fbcMatch[1] : (userData.fbc || undefined);
-
-    // Parse First & Last Name
-    let firstName = userData.name || '';
-    let lastName = '';
-    if (userData.name && userData.name.trim().includes(' ')) {
-      const parts = userData.name.trim().split(/\s+/);
-      firstName = parts[0];
-      lastName = parts.slice(1).join(' ');
-    }
-
-    const payload = {
-      data: [
-        {
-          event_name: eventName,
-          event_time: Math.floor(Date.now() / 1000),
-          event_id: eventId || `capi_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-          event_source_url: req.headers.referer || `https://${req.headers['x-forwarded-host'] || req.headers.host}/`,
-          action_source: 'website',
-          user_data: {
-            em: userData.email ? [hashSha256(userData.email)] : undefined,
-            ph: (userData.whatsapp_number || userData.phone) ? [hashSha256(normalizePhone(userData.whatsapp_number || userData.phone))] : undefined,
-            fn: firstName ? [hashSha256(firstName)] : undefined,
-            ln: lastName ? [hashSha256(lastName)] : undefined,
-            client_ip_address: clientIp || undefined,
-            client_user_agent: clientUserAgent || undefined,
-            fbp: fbp || undefined,
-            fbc: fbc || undefined
-          },
-          custom_data: customData
-        }
-      ]
-    };
-
-    if (process.env.META_TEST_EVENT_CODE) {
-      payload.test_event_code = process.env.META_TEST_EVENT_CODE;
-    }
-
-    const graphUrl = `https://graph.facebook.com/v20.0/${pixelId}/events?access_token=${apiToken}`;
-    
-    let capiRes;
-    try {
-      capiRes = await postJsonHttps(graphUrl, payload);
-    } catch (httpsErr) {
-      console.warn(`⚠️ [Meta CAPI HTTPS Notice]: postJsonHttps error (${httpsErr.message}), trying fetch fallback...`);
-      try {
-        const fetchRes = await fetch(graphUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'Sahajta-AI-Server/1.0 (Node.js/CAPI)'
-          },
-          body: JSON.stringify(payload)
-        });
-        const data = await fetchRes.json();
-        capiRes = { status: fetchRes.status, data: data };
-      } catch (fetchErr) {
-        console.error(`❌ [Meta CAPI Error]: Failed to send "${eventName}". HTTPS err: ${httpsErr.message} | Fetch err: ${fetchErr.message}`);
-        return false;
-      }
-    }
-
-    if (capiRes.status >= 200 && capiRes.status < 300) {
-      console.log(`✅ [Meta CAPI Success]: Event "${eventName}" dispatched to Meta Graph API. Received: ${capiRes.data?.events_received || 1}`);
-      return true;
-    } else {
-      console.warn(`⚠️ [Meta CAPI Warning]: Meta Graph API returned status ${capiRes.status}:`, capiRes.data?.error || capiRes.data);
-      return false;
-    }
-  } catch (err) {
-    console.error(`❌ [Meta CAPI Error]: Failed to send "${eventName}":`, err.message);
-    return false;
-  }
-}
-
-// Config endpoint for client runtime variables
+// Config endpoint for client runtime variables.
+// The Pixel ID is the live one on production and the Sandbox one on previews (never a fallback to the live one).
+// No Cal.com booking link: bookings come only through our form.
 app.get('/api/config', (req, res) => {
   const config = getLatestConfig();
   res.json({
-    calendarEmbedUrl: config.CALENDAR_EMBED_URL,
-    metaPixelId: config.META_PIXEL_ID,
+    metaPixelId: lcfg.pixelId(),
+    pixelKind: lcfg.isProduction() ? 'live' : 'sandbox',
+    clarityId: lcfg.clarityId(),
+    newTracking: lcfg.newTracking(),
     whatsappNumber: config.WHATSAPP_NUMBER,
     briefingVideoUrl: config.BRIEFING_VIDEO_URL,
     briefingVideoPoster: config.BRIEFING_VIDEO_POSTER,
@@ -293,29 +170,23 @@ app.get('/api/config', (req, res) => {
   });
 });
 
-// Client CAPI Event Tracking Route
-app.post('/api/track-capi', async (req, res) => {
-  const { eventName, userData, customData, eventId } = req.body;
-  if (!eventName) return res.status(400).json({ success: false, error: 'Missing eventName' });
-
-  const success = await sendMetaCapiEvent(eventName, req, userData || {}, customData || {}, eventId || null);
-  res.json({ success });
-});
-
 // ---------------------------------------------------------------------------
 // Automatic emails (Thank-you Page Brief v1, parts 7 and 8)
 // ---------------------------------------------------------------------------
 
-// The details of this visit, kept for 24 hours, so "Didn't book" and the nudges never trust what the browser sends later
+// The checked details of this visit, kept for 24 hours (Backend and Tracking Brief, 5.3): the "Didn't book" email and the
+// nudges start only from this record. Replies at once, then sends Lead to Meta from the server.
 app.post('/api/lead', async (req, res) => {
-  if (!lleads.originAllowed(req)) return res.status(403).json({ ok: false });
+  if (!lleads.originAllowed(req)) return res.status(403).json({ ok: false, code: 'origin' });
+  let out;
   try {
-    const out = await lleads.saveLead(req.body || {});
-    return res.status(out.ok ? 200 : 400).json({ ok: out.ok });
+    out = await lleads.saveLead(req.body || {}, req);
   } catch (err) {
     console.error('⚠️ [/api/lead]:', err.message);
-    return res.status(200).json({ ok: false });
+    out = { status: 503, body: { ok: false, code: 'store' } };
   }
+  res.status(out.status).json(out.body);
+  if (out.leadEvent) lafter.after(() => lmeta.send(out.leadEvent));
 });
 
 // The page was left at the time step without booking ("didnt_book"), or no times showed ("no_times")
@@ -397,6 +268,7 @@ app.get('/api/available-slots', async (req, res) => {
 
   const config = getLatestConfig();
   const calApiKey = config.CAL_API_KEY || process.env.CAL_API_KEY || '';
+  let slotsFailed = !calApiKey; // no key means nobody can book either
 
   if (calApiKey && monthStr) {
     try {
@@ -411,9 +283,11 @@ app.get('/api/available-slots', async (req, res) => {
         headers: {
           'Authorization': `Bearer ${calApiKey}`,
           'User-Agent': 'Sahajta-AI-Server/1.0 (Node.js)'
-        }
+        },
+        signal: AbortSignal.timeout(8000)
       });
 
+      if (!calRes.ok) slotsFailed = true;
       if (calRes.ok) {
         const data = await calRes.json();
         const slotsByDate = {};
@@ -444,6 +318,7 @@ app.get('/api/available-slots', async (req, res) => {
       }
     } catch (err) {
       console.warn('Cal API month slots error:', err.message);
+      slotsFailed = true;
     }
   }
 
@@ -455,8 +330,10 @@ app.get('/api/available-slots', async (req, res) => {
         headers: {
           'Authorization': `Bearer ${calApiKey}`,
           'User-Agent': 'Sahajta-AI-Server/1.0 (Node.js)'
-        }
+        },
+        signal: AbortSignal.timeout(8000)
       });
+      if (!calRes.ok) slotsFailed = true;
       if (calRes.ok) {
         const data = await calRes.json();
         const slotsList = [];
@@ -477,10 +354,16 @@ app.get('/api/available-slots', async (req, res) => {
       }
     } catch (err) {
       console.warn('Cal API slot fetch error:', err.message);
+      slotsFailed = true;
     }
   }
 
-  return res.json({ date: dateStr, slots: [], slotsByDate: {}, availableDates: [] });
+  res.json({ date: dateStr, slots: [], slotsByDate: {}, availableDates: [] });
+  if (slotsFailed) {
+    // Open times failing to load means nobody can book: also by the backup alert path, at most one every 30 minutes
+    lafter.after(() => lalerts.rateLimited('slots-fail', 30 * 60, 'Open times are not loading',
+      'The open times failed to load from Cal.com, so nobody can book right now. Please check the Cal.com key and the event.', { backup: true }));
+  }
 });
 
 // Turns a wall-clock date and time in a named time zone into the real moment (UTC).
@@ -515,26 +398,32 @@ function formatNotesPhone(raw) {
 }
 
 // API Route: Submit Lead Intake & Dispatch Email
+// Backend and Tracking Brief: checks (7.1, 7.2), Schedule and QualifiedBooking from the server (5.3, 5.5),
+// the source data on the booking (6), the test flag (7.3) and the alerts (7.4). Reply first, then the rest (part 4).
+const BOOKING_ERROR = 'The booking could not be made. Please pick a time again.';
+
 app.post('/api/submit-lead', async (req, res) => {
+  if (!lleads.originAllowed(req)) return res.status(403).json({ success: false, ok: false, code: 'origin' });
   const config = getLatestConfig();
+  const fail = (status, code, msg) => res.status(status).json({ success: false, ok: false, code, error: msg || BOOKING_ERROR });
 
   // A booking from a nudge's link: the browser sends only resume_code and the time. The details come from the store.
   const resumeCode = typeof req.body.resume_code === 'string' ? req.body.resume_code : '';
   let nudgeRec = null;
   if (resumeCode) {
-    const fail = (msg) => res.status(400).json({ success: false, error: msg || 'This link has expired. Please start again.' });
-    if (!/^[A-Za-z0-9_-]{16,64}$/.test(resumeCode)) return fail();
+    const expired = () => fail(400, 'invalid', 'This link has expired. Please start again.');
+    if (!/^[A-Za-z0-9_-]{16,64}$/.test(resumeCode)) return expired();
     const n = await lstore.get('nudge:' + resumeCode);
-    if (!n) return fail();
+    if (!n) return expired();
     if (n.used) {
       // A retry with the same code for the same time gets that booking back
       const b = n.bookingResult;
       if (b && b.slotDate === req.body.slotDate && b.slotTime === req.body.slotTime) {
-        return res.status(200).json({ success: true, whatsappNumber: config.WHATSAPP_NUMBER, rescheduleUrl: b.rescheduleUrl || null, lead: { name: n.lead.name } });
+        return res.status(200).json({ success: true, ok: true, test: !!b.test, whatsappNumber: config.WHATSAPP_NUMBER, rescheduleUrl: b.rescheduleUrl || null, lead: { name: n.lead.name } });
       }
-      return fail();
+      return expired();
     }
-    if (Date.now() - n.createdAt > lcfg.resumeCodeTtlMs()) return fail();
+    if (Date.now() - n.createdAt > lcfg.resumeCodeTtlMs()) return expired();
     nudgeRec = n;
     req.body = Object.assign({}, req.body, {
       name: n.lead.name, company: n.lead.company, email: n.lead.email, whatsapp_number: n.lead.whatsapp_number,
@@ -544,51 +433,68 @@ app.post('/api/submit-lead', async (req, res) => {
   }
 
   const {
-    q1_situation,
-    q2_urgency,
-    name,
-    company,
-    email,
-    whatsapp_number,
-    bookedSlot,
-    timezone,
-    utm_source,
-    utm_medium,
-    utm_campaign
+    q1_situation, q2_urgency, name, company, email, whatsapp_number, bookedSlot, timezone, slotDate, slotTime
   } = req.body;
+  const pickedTime = `${slotDate || '?'} ${slotTime || '?'}`;
+  const detailsText = `Name: ${name}\nCompany: ${company}\nEmail: ${email}\nWhatsApp: ${whatsapp_number}\nTime they picked: ${pickedTime}`;
 
-  // Input Validation
-  if (!name || !email || !company || !whatsapp_number) {
-    return res.status(400).json({
-      success: false,
-      error: 'Missing required fields (name, email, company, whatsapp_number)'
-    });
+  // 7.1 The server checks every input again (a nudge's saved details were checked when /api/lead kept them)
+  if (!nudgeRec && !lleads.validateDetails(req.body).ok) return fail(400, 'invalid', 'Please check your details and try again.');
+
+  // 7.2 Bots: a filled trap, or a form sent in under 3 seconds. The normal booking error, and an alert in case it was a real person.
+  if (!nudgeRec && (req.body.hp_note || !(Number(req.body.form_ms) >= 3000))) {
+    lafter.after(() => lalerts.rateLimited('bot-refused', 30 * 60, 'A booking was refused as a bot',
+      `A booking was refused by the spam checks (trap field or form sent too fast), in case it was a real person.\n\n${detailsText}`, { backup: false }));
+    return fail(502, 'booking');
   }
 
-  // Automatic Cal.com & Google Calendar Event Creation
+  // 7.1 The time: in the future, and no more than 8 days ahead (Cal.com applies its own notice and window)
+  const bookingZone = ltime.isValidTimeZone(timezone) ? timezone : 'Asia/Kolkata';
+  const timeMatch = String(slotTime || '').match(/(\d+):(\d+)\s*(AM|PM)/i);
+  let startDt = null;
+  if (timeMatch && /^\d{4}-\d{2}-\d{2}$/.test(String(slotDate || ''))) {
+    let hours = parseInt(timeMatch[1], 10);
+    const minutes = parseInt(timeMatch[2], 10);
+    const ampm = timeMatch[3].toUpperCase();
+    if (ampm === 'PM' && hours < 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+    startDt = ltime.zonedTimeToUtc(slotDate, hours, minutes, bookingZone);
+  }
+  if (!startDt || startDt.getTime() <= Date.now() || startDt.getTime() > Date.now() + 8 * 86400000) {
+    return fail(400, 'invalid', 'That time is no longer available. Please pick a time again.');
+  }
+
   const calApiKey = config.CAL_API_KEY || process.env.CAL_API_KEY || '';
-  let googleMeetUrl = null;
+  const test = lcfg.isTest(email);
+  const qualified = lqualify.isQualified(q1_situation, q2_urgency);
+  const scheduleId = /^[0-9a-f-]{36}$/i.test(String(req.body.schedule_event_id || '')) ? req.body.schedule_event_id : crypto.randomUUID();
+  const leadEventId = nudgeRec ? nudgeRec.leadEventId : String(req.body.lead_event_id || '');
+  const savedLead = (nudgeRec && nudgeRec.lead) || {};
+  const attrib = lleads.cleanAttrib(req.body.sv_attrib || savedLead.sv_attrib);
+  const fbp = req.body.fbp || lleads.cookieFrom(req, '_fbp') || savedLead.fbp || '';
+  const fbc = lmeta.buildFbc(req.body.fbc || lleads.cookieFrom(req, '_fbc') || savedLead.fbc || '', attrib);
+  const pageUrl = String(req.body.page_url || '').slice(0, 500);
+
   let calAccepted = false;
   let rescheduleUrl = null;
   let bookingUid = null;
+  let googleMeetUrl = null;
+  let timedOut = false;
 
-  if (calApiKey && req.body.slotDate && req.body.slotTime) {
-    try {
-      const datePart = req.body.slotDate;
-      const timeStr = req.body.slotTime;
-      const match = String(timeStr).match(/(\d+):(\d+)\s*(AM|PM)/i);
-      // Book in the visitor's own time zone (the one the times were shown in); no valid zone: India time
-      const bookingZone = isValidTimeZone(timezone) ? timezone : 'Asia/Kolkata';
-      if (match && /^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
-        let hours = parseInt(match[1], 10);
-        const minutes = parseInt(match[2], 10);
-        const ampm = match[3].toUpperCase();
-        if (ampm === 'PM' && hours < 12) hours += 12;
-        if (ampm === 'AM' && hours === 12) hours = 0;
-        const startDt = zonedTimeToUtc(datePart, hours, minutes, bookingZone);
+  if (calApiKey) {
+    // A retry after a timeout, with the same email and the same time, must not book twice: reply with the booking that exists
+    let existing = null;
+    try { existing = await lcal.findBookingAt(email, startDt.getTime()); } catch (e) { /* carry on: Cal.com decides */ }
 
-        // Booking notes: four labelled lines, so Cal.com's invite shows them clearly
+    if (existing) {
+      calAccepted = true;
+      bookingUid = existing.uid;
+      rescheduleUrl = bookingUid ? `https://cal.com/reschedule/${encodeURIComponent(bookingUid)}` : null;
+    } else {
+      try {
+        // Booking notes: four labelled lines, so Cal.com's invite shows them clearly. A test starts with "TEST BOOKING".
         const notes = [
+          ...(test ? ['TEST BOOKING'] : []),
           `Company or project: ${company}`,
           `WhatsApp: ${formatNotesPhone(whatsapp_number)}`,
           `What’s happening right now: ${q1_situation || 'N/A'}`,
@@ -602,18 +508,15 @@ app.post('/api/submit-lead', async (req, res) => {
             'Content-Type': 'application/json',
             'User-Agent': 'Sahajta-AI-Server/1.0 (Node.js)'
           },
+          signal: AbortSignal.timeout(8000),
           body: JSON.stringify({
             start: startDt.toISOString(),
             eventTypeId: lcfg.eventTypeId(),
             timeZone: bookingZone,
             language: 'en',
-            // nudge: yes, so the bookings that came from a nudge's link can be counted
-            metadata: nudgeRec ? { nudge: 'yes' } : {},
-            responses: {
-              name: name,
-              email: email,
-              notes: notes
-            }
+            // Hidden: the source data and flags (never in the notes, which the lead sees)
+            metadata: lbookingmeta.buildBookingMetadata({ body: req.body, req, nudgeRec, test, qualified, leadEventId, scheduleId }),
+            responses: { name, email, notes }
           })
         });
 
@@ -623,20 +526,24 @@ app.post('/api/submit-lead', async (req, res) => {
           googleMeetUrl = calData.data?.videoCallUrl || calData.data?.location || null;
           bookingUid = calData.data?.uid || null;
           rescheduleUrl = bookingUid ? `https://cal.com/reschedule/${encodeURIComponent(bookingUid)}` : null;
-          console.log(`✅ [Cal.com Sync Success]: Google Calendar booking created! ID: ${calData.data?.id} | Meet: ${googleMeetUrl}`);
+          console.log(`✅ [Cal.com booking]: created, uid ${bookingUid || '-'}`);
         } else {
-          const errBody = await calRes.text();
-          console.warn('⚠️ [Cal.com Booking Notice]:', errBody);
+          console.warn('⚠️ [Cal.com booking refused]: status', calRes.status);
         }
+      } catch (calErr) {
+        timedOut = calErr.name === 'TimeoutError';
+        console.error('⚠️ [Cal.com booking error]:', timedOut ? 'timed out after 8 seconds' : calErr.message);
       }
-    } catch (calErr) {
-      console.error('⚠️ [Cal.com Booking Error]:', calErr.message);
     }
-  }
 
-  // A booking that Cal.com did not accept is a failed booking: tell the page, send nothing, create nothing
-  if (calApiKey && req.body.slotDate && req.body.slotTime && !calAccepted) {
-    return res.status(502).json({ success: false, error: 'The booking could not be made. Please pick a time again.' });
+    // A booking that Cal.com refused or that timed out is a failed booking: tell the page, send nothing, create nothing.
+    // One alert per person (per email and time picked), never merged.
+    if (!calAccepted) {
+      lafter.after(() => lalerts.send('A booking could not be made',
+        `Cal.com ${timedOut ? 'did not answer in time' : 'refused'} a booking. Please reach out to this person.\n\n${detailsText}`,
+        `refused:${String(email).toLowerCase()}:${pickedTime}`, { backup: false }));
+      return fail(502, 'booking');
+    }
   }
 
   // Nobody who booked gets a "Didn't book" email or a nudge; a used code stays used
@@ -644,20 +551,30 @@ app.post('/api/submit-lead', async (req, res) => {
     if (nudgeRec) {
       await lstore.update('nudge:' + resumeCode, {
         used: true, booked: true,
-        bookingResult: { slotDate: req.body.slotDate, slotTime: req.body.slotTime, rescheduleUrl }
+        bookingResult: { slotDate, slotTime, rescheduleUrl, test }
       });
     }
-    await lleads.markBooked(nudgeRec ? nudgeRec.leadEventId : req.body.lead_event_id, email);
+    await lleads.markBooked(leadEventId, email);
   } catch (markErr) {
     console.error('⚠️ [Mark booked error]:', markErr.message);
   }
 
-  const timestamp = new Date().toISOString();
-  const formattedSlot = bookedSlot || 'Pending calendar confirmation';
+  // Reply first. Everything else (the team email, the CRM, Meta) happens after the reply.
+  res.status(200).json({
+    success: true, ok: true, test,
+    message: 'Lead captured successfully.',
+    whatsappNumber: config.WHATSAPP_NUMBER,
+    rescheduleUrl,
+    lead: { name, company, email, bookedSlot: bookedSlot || 'Pending calendar confirmation' }
+  });
 
-  // 1. Internal Team Email Summary
-  const teamSubject = `[New Real Estate Lead] ${name} - ${company}`;
-  const teamTextSummary = `
+  lafter.after(async () => {
+    const formattedSlot = bookedSlot || 'Pending calendar confirmation';
+    const timestamp = new Date().toISOString();
+
+    // 1. Internal team email summary
+    const teamSubject = `[New Real Estate Lead] ${name} - ${company}`;
+    const teamTextSummary = `
 ===================================================
 ENQUIRY-TO-SITE-VISIT ENGINE - NEW QUALIFIED LEAD
 ===================================================
@@ -676,76 +593,39 @@ Timezone:             ${timezone || 'UTC'}
 Submitted At:         ${timestamp}
 
 [ATTRIBUTION & UTMS]
-UTM Source:           ${utm_source || 'Direct / None'}
-UTM Medium:           ${utm_medium || 'Direct / None'}
-UTM Campaign:         ${utm_campaign || 'Direct / None'}
+UTM Source:           ${attrib.utm_source || 'Direct / None'}
+UTM Medium:           ${attrib.utm_medium || 'Direct / None'}
+UTM Campaign:         ${attrib.utm_campaign || 'Direct / None'}
 ===================================================
 `;
+    console.log('📥 [Lead captured]: booking made' + (test ? ' (test)' : ''));
+    const destinationList = config.DESTINATION_EMAIL.split(',').map(e => e.trim()).filter(Boolean);
+    const tasks = destinationList.map(dest => dispatchEmail({
+      to: dest, from: config.FROM_EMAIL, subject: teamSubject, text: teamTextSummary, config
+    }).catch(err => console.error(`⚠️ [Team email error for ${dest}]:`, err.message)));
 
-  console.log('\n📥 REAL ESTATE LEAD CAPTURED:\n' + teamTextSummary);
-
-  // Dispatch Internal Notification to Team Inbox(es)
-  const destinationList = config.DESTINATION_EMAIL.split(',').map(e => e.trim()).filter(Boolean);
-  destinationList.forEach(dest => {
-    dispatchEmail({
-      to: dest,
-      from: config.FROM_EMAIL,
-      subject: teamSubject,
-      text: teamTextSummary,
-      config: config
-    }).catch(err => {
-      console.error(`⚠️ [Team Email Error for ${dest}]:`, err.message);
-    });
-  });
-
-  // The lead's own emails come from Cal.com (booking email and invite) and our Gmail sender, which Cal.com's
-  // "Booking Created" webhook starts (/api/cal-webhook). The old "Strategy Call Confirmed" email is gone.
-
-  // Safe Odoo CRM Lead Creation
-  if (config.ODOO_API_KEY) {
-    dispatchToOdooCRM(req.body, config).catch(err => {
-      console.error('⚠️ [Odoo CRM Dispatch Error]:', err.message);
-    });
-  } else {
-    console.log('ℹ️ [Odoo CRM]: No ODOO_API_KEY set in .env. Skipping Odoo sync.');
-  }
-
-  // Direct Backend Meta Conversions API (CAPI) Dispatch (Awaited for Vercel serverless completion guarantee)
-  // From a nudge's link the ad cookies may be missing: use this visit's, else the ones saved when they first left
-  const capiUserData = {
-    name, email, whatsapp_number, company,
-    fbp: req.body.fbp || (nudgeRec && nudgeRec.lead.fbp) || undefined,
-    fbc: req.body.fbc || (nudgeRec && nudgeRec.lead.fbc) || undefined
-  };
-  const baseEventId = nudgeRec
-    ? `nudge_${nudgeRec.leadEventId}`
-    : (req.body.lead_event_id || req.body.event_id || `lead_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`);
-
-  try {
-    // A booking from a nudge's link sends one Schedule and no second Lead: they sent it the first time
-    if (!nudgeRec) {
-      await sendMetaCapiEvent('Lead', req, capiUserData, {
-        content_name: 'Lead Conversion Clarity Call Lead',
-        company: company
-      }, baseEventId);
+    // 2. CRM (replaced by the Odoo Brief later)
+    if (config.ODOO_API_KEY) {
+      tasks.push(dispatchToOdooCRM(Object.assign({}, req.body, { utm_source: attrib.utm_source, utm_medium: attrib.utm_medium, utm_campaign: attrib.utm_campaign }), config)
+        .catch(err => console.error('⚠️ [Odoo CRM dispatch error]:', err.message)));
     }
 
-    if (bookedSlot && bookedSlot !== 'Pending calendar confirmation') {
-      await sendMetaCapiEvent('Schedule', req, capiUserData, {
-        content_name: 'Lead Conversion Clarity Call Slot',
-        booked_slot: bookedSlot
-      }, `sched_${baseEventId}`);
-    }
-  } catch (err) {
-    console.error('⚠️ [Meta CAPI Dispatch Error]:', err.message);
-  }
+    // 3. Meta, from the server: Schedule with the browser's shared event ID, then QualifiedBooking (once per booking)
+    tasks.push((async () => {
+      const common = {
+        req, person: { name, email, phone: whatsapp_number }, sourceUrl: pageUrl, fbp, fbc, test
+      };
+      await lmeta.send(Object.assign({ eventName: 'Schedule', eventId: scheduleId, customName: 'Lead Conversion Clarity Call' }, common));
+      if (qualified) {
+        const key = 'qb:' + (bookingUid || scheduleId);
+        if (!(await lstore.get(key))) {
+          const r = await lmeta.send(Object.assign({ eventName: 'QualifiedBooking', eventId: scheduleId + '-q', customName: 'Lead Conversion Clarity Call' }, common));
+          if (r.ok && !r.skipped) await lstore.set(key, { at: Date.now() }, { ttl: 90 * 86400 });
+        }
+      }
+    })().catch(err => console.error('⚠️ [Meta send error]:', err.message)));
 
-  return res.status(200).json({
-    success: true,
-    message: 'Lead captured successfully and confirmation dispatched.',
-    whatsappNumber: config.WHATSAPP_NUMBER,
-    rescheduleUrl,
-    lead: { name, company, email, bookedSlot: formattedSlot }
+    await Promise.allSettled(tasks);
   });
 });
 

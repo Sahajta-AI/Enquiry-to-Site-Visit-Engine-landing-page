@@ -4,17 +4,56 @@
   "outputDirectory": "public",
   "cleanUrls": true,
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    }
   ],
   "redirects": [
-    { "source": "/fit-and-book", "destination": "/", "permanent": false }
+    {
+      "source": "/fit-and-book",
+      "destination": "/",
+      "permanent": false
+    }
   ],
   "headers": [
     {
       "source": "/thank-you",
       "headers": [
-        { "key": "X-Robots-Tag", "value": "noindex" },
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/tracking-test",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/tracking-test.html",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        }
       ]
     }
   ],
