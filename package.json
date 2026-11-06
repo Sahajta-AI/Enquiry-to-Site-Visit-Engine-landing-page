@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node --test tests/units.test.js tests/flow.test.js"
+    "test": "node --test tests/units.test.js tests/flow.test.js tests/odoo.test.js"
   },
   "dependencies": {
     "@vercel/functions": "^3.10.6",

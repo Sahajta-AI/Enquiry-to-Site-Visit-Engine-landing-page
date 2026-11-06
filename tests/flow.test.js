@@ -746,7 +746,7 @@ test('11 test page: nothing real reaches the live Pixel: no Lead or Schedule, an
     { action: 'send', event: 'Schedule', target: 'live' },
     { action: 'send', event: 'TrackingCheck', target: 'live' },     // not production here
     { action: 'send', event: 'TrackingCheck', target: 'sandbox' },
-    { action: 'send', event: 'Purchase', target: 'sandbox' }
+    { action: 'send', event: 'NotAnEvent', target: 'sandbox' }
   ]) {
     const d = await (await tt(body)).json();
     assert.strictEqual(d.ok, false, JSON.stringify(body));

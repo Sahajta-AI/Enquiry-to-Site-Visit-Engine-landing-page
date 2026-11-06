@@ -61,5 +61,11 @@
     "api/index.js": {
       "excludeFiles": "{public/**,.env*}"
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/odoo-signals",
+      "schedule": "0 3 * * *"
+    }
+  ]
 }

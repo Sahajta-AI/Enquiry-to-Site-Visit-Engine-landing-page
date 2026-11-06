@@ -17,6 +17,8 @@ const lqualify = require('./lib/qualify');
 const lcal = require('./lib/cal');
 const lbookingmeta = require('./lib/bookingmeta');
 const ltrackingtest = require('./lib/trackingtest');
+const lodooleads = require('./lib/odooleads');
+const lodoosignals = require('./lib/odoosignals');
 
 // Load environment variables from .env if present
 const envPath = path.join(__dirname, '.env');
@@ -144,10 +146,6 @@ function getLatestConfig() {
     SMTP_PORT: process.env.SMTP_PORT || 465,
     SMTP_USER: process.env.SMTP_USER || '',
     SMTP_PASS: process.env.SMTP_PASS || '',
-    ODOO_URL: process.env.ODOO_URL || 'https://sahajta.odoo.com',
-    ODOO_DB: process.env.ODOO_DB || 'sahajta',
-    ODOO_USER: process.env.ODOO_USER || 'shubhangsethi@gmail.com',
-    ODOO_API_KEY: process.env.ODOO_API_KEY || '',
     CAL_API_KEY: process.env.CAL_API_KEY || ''
   };
 }
@@ -187,6 +185,10 @@ app.post('/api/lead', async (req, res) => {
   }
   res.status(out.status).json(out.body);
   if (out.leadEvent) lafter.after(() => lmeta.send(out.leadEvent));
+  if (out.odooLead) {
+    lafter.after(() => lodooleads.onLead(out.odooLead));
+    lafter.after(() => lodoosignals.checkHealth());
+  }
 });
 
 // The page was left at the time step without booking ("didnt_book"), or no times showed ("no_times")
@@ -223,7 +225,10 @@ app.post('/api/cal-webhook', async (req, res) => {
   }
   try {
     const out = await lwebhook.handle(req.body);
-    return res.status(out.status).json({ ok: true, result: out.result });
+    res.status(out.status).json({ ok: true, result: out.result });
+    // Odoo, after the reply, on all three triggers: an Odoo problem never touches the booking or its email
+    lafter.after(() => lodooleads.onWebhook(req.body));
+    return;
   } catch (err) {
     console.error('❌ [/api/cal-webhook]:', err.message);
     return res.status(500).json({ ok: false });
@@ -240,6 +245,18 @@ app.post('/api/jobs/run', async (req, res) => {
   } catch (err) {
     console.error('❌ [/api/jobs/run]:', err.message);
     return res.status(500).json({ ok: false }); // the queue tries again
+  }
+});
+
+// The signal job (Odoo Brief, part 6): Vercel Cron calls this with Authorization: Bearer {CRON_SECRET}
+app.get('/api/cron/odoo-signals', async (req, res) => {
+  if (!lscheduler.verifyCron(req)) return res.status(401).json({ ok: false });
+  try {
+    const out = await lodoosignals.run({ tests: false });
+    return res.status(200).json({ ok: out.ok, result: out.result });
+  } catch (err) {
+    console.error('❌ [/api/cron/odoo-signals]:', err.message);
+    return res.status(500).json({ ok: false });
   }
 });
 
@@ -604,11 +621,7 @@ UTM Campaign:         ${attrib.utm_campaign || 'Direct / None'}
       to: dest, from: config.FROM_EMAIL, subject: teamSubject, text: teamTextSummary, config
     }).catch(err => console.error(`⚠️ [Team email error for ${dest}]:`, err.message)));
 
-    // 2. CRM (replaced by the Odoo Brief later)
-    if (config.ODOO_API_KEY) {
-      tasks.push(dispatchToOdooCRM(Object.assign({}, req.body, { utm_source: attrib.utm_source, utm_medium: attrib.utm_medium, utm_campaign: attrib.utm_campaign }), config)
-        .catch(err => console.error('⚠️ [Odoo CRM dispatch error]:', err.message)));
-    }
+    // 2. The CRM (Odoo) is handled by the Odoo Brief's code: the lead at /api/lead, the booking through the Cal.com webhook
 
     // 3. Meta, from the server: Schedule with the browser's shared event ID, then QualifiedBooking (once per booking)
     tasks.push((async () => {
@@ -628,224 +641,6 @@ UTM Campaign:         ${attrib.utm_campaign || 'Direct / None'}
     await Promise.allSettled(tasks);
   });
 });
-
-/**
- * Safe, Relational Odoo CRM JSON-RPC Lead Dispatcher
- * Workflow:
- * 1. Search 'res.partner' (READ ONLY) for an existing contact with matching email.
- * 2. If no contact is found, create 1 new contact in 'res.partner'.
- *    If contact IS found, use existing partner_id (never overwrite/edit existing contact!).
- * 3. Create 1 new opportunity in 'crm.lead' linked to partner_id.
- * 4. Post formatted Log Note to right-side Chatter feed via 'message_post'.
- */
-async function dispatchToOdooCRM(leadData, config) {
-  const odooUrl = config.ODOO_URL || 'https://sahajta.odoo.com';
-  const odooDb = config.ODOO_DB || 'sahajta';
-  const odooUser = config.ODOO_USER || 'shubhangsethi@gmail.com';
-  const odooApiKey = config.ODOO_API_KEY;
-
-  if (!odooApiKey) {
-    console.log('ℹ️ [Odoo CRM]: No ODOO_API_KEY set. Skipping Odoo dispatch.');
-    return;
-  }
-
-  const endpoint = `${odooUrl.replace(/\/$/, '')}/jsonrpc`;
-  console.log(`📡 [Odoo CRM]: Authenticating with Odoo at ${endpoint}...`);
-
-  try {
-    // Step 1: Authenticate with Odoo common service (Read-only session UID)
-    const authRes = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'call',
-        params: {
-          service: 'common',
-          method: 'authenticate',
-          args: [odooDb, odooUser, odooApiKey, {}]
-        },
-        id: 1
-      })
-    });
-
-    const authJson = await authRes.json();
-    const uid = authJson.result;
-
-    if (!uid) {
-      console.error('❌ [Odoo CRM Authentication Error]: Could not authenticate. Response:', authJson);
-      return;
-    }
-
-    console.log(`✅ [Odoo CRM Authenticated]: UID = ${uid}. Searching for existing Contact in res.partner...`);
-
-    // Step 2: Search res.partner (READ-ONLY) for contact by email
-    let partnerId = null;
-    if (leadData.email) {
-      const searchRes = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'call',
-          params: {
-            service: 'object',
-            method: 'execute_kw',
-            args: [
-              odooDb,
-              uid,
-              odooApiKey,
-              'res.partner',
-              'search',
-              [[['email', '=', leadData.email.trim()]]]
-            ]
-          },
-          id: 2
-        })
-      });
-
-      const searchJson = await searchRes.json();
-      if (searchJson.result && Array.isArray(searchJson.result) && searchJson.result.length > 0) {
-        partnerId = searchJson.result[0];
-        console.log(`🤝 [Odoo CRM Contact Found]: Using existing partner_id = ${partnerId} (Existing contact left 100% untouched)`);
-      }
-    }
-
-    // Step 3: If contact does not exist, create 1 brand-new contact in res.partner
-    if (!partnerId) {
-      console.log(`👤 [Odoo CRM]: Contact not found. Creating new contact for ${leadData.name} in res.partner...`);
-      const partnerCreateRes = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'call',
-          params: {
-            service: 'object',
-            method: 'execute_kw',
-            args: [
-              odooDb,
-              uid,
-              odooApiKey,
-              'res.partner',
-              'create',
-              [
-                {
-                  name: leadData.name || 'New Lead',
-                  email: leadData.email || '',
-                  phone: leadData.whatsapp_number || '',
-                  company_name: leadData.company || ''
-                }
-              ]
-            ]
-          },
-          id: 3
-        })
-      });
-
-      const partnerCreateJson = await partnerCreateRes.json();
-      if (partnerCreateJson.result) {
-        partnerId = partnerCreateJson.result;
-        console.log(`✨ [Odoo CRM New Contact Created]: Partner ID = ${partnerId}`);
-      } else {
-        console.warn('⚠️ [Odoo CRM Contact Creation Warning]: Could not create res.partner:', partnerCreateJson.error || partnerCreateJson);
-      }
-    }
-
-    // Step 4: Create Opportunity in crm.lead linked to partner_id
-    console.log(`📊 [Odoo CRM]: Creating Opportunity in crm.lead linked to partner_id ${partnerId}...`);
-    const leadValues = {
-      name: `[Web Lead] ${leadData.company || leadData.name}`,
-      contact_name: leadData.name,
-      partner_name: leadData.company,
-      email_from: leadData.email,
-      phone: leadData.whatsapp_number
-    };
-
-    if (partnerId) {
-      leadValues.partner_id = partnerId;
-    }
-
-    const createRes = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'call',
-        params: {
-          service: 'object',
-          method: 'execute_kw',
-          args: [
-            odooDb,
-            uid,
-            odooApiKey,
-            'crm.lead',
-            'create',
-            [leadValues]
-          ]
-        },
-        id: 4
-      })
-    });
-
-    const createJson = await createRes.json();
-    const leadId = createJson.result;
-
-    if (leadId) {
-      console.log(`🎉 [Odoo CRM Success]: Opportunity created successfully! Record ID: ${leadId}`);
-
-      // Step 5: Post formatted Log Note to right-side Chatter feed
-      const logNoteHtml = `
-<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
-  <h4 style="color: #1B4332; margin: 0 0 8px 0; font-size: 14px; border-bottom: 1px solid #E5E7EB; padding-bottom: 4px;">📋 Qualified Lead Answers &amp; Booking Details</h4>
-  <p style="margin: 0 0 6px 0;"><strong>Q1 Situation:</strong> ${leadData.q1_situation || 'Not answered'}</p>
-  <p style="margin: 0 0 6px 0;"><strong>Q2 Urgency:</strong> ${leadData.q2_urgency || 'Not answered'}</p>
-  <p style="margin: 0 0 6px 0;"><strong>📅 Booked Call Slot:</strong> ${leadData.bookedSlot || 'Pending calendar confirmation'}</p>
-  <p style="margin: 0 0 6px 0;"><strong>🌐 Timezone:</strong> ${leadData.timezone || 'UTC'}</p>
-  <p style="margin: 0;"><strong>📊 Attribution:</strong> Source: ${leadData.utm_source || 'Direct'} | Medium: ${leadData.utm_medium || 'Direct'} | Campaign: ${leadData.utm_campaign || 'Direct'}</p>
-</div>
-`.trim();
-
-      const noteRes = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'call',
-          params: {
-            service: 'object',
-            method: 'execute_kw',
-            args: [
-              odooDb,
-              uid,
-              odooApiKey,
-              'crm.lead',
-              'message_post',
-              [leadId]
-            ],
-            kwargs: {
-              body: logNoteHtml,
-              message_type: 'comment',
-              subtype_xmlid: 'mail.mt_note'
-            }
-          },
-          id: 5
-        })
-      });
-
-      const noteJson = await noteRes.json();
-      if (noteJson.result) {
-        console.log(`✅ [Odoo CRM Log Note]: Posted neatly into right-side chatter! Note ID: ${noteJson.result}`);
-      } else {
-        console.warn('⚠️ [Odoo CRM Log Note Warning]: Could not post log note:', noteJson.error || noteJson);
-      }
-    } else {
-      console.error('❌ [Odoo CRM Lead Creation Error]:', createJson.error || createJson);
-    }
-  } catch (err) {
-    console.error('❌ [Odoo CRM Exception Error]:', err.message);
-  }
-}
 
 /**
  * Universal Dual Email Transport Engine (Nodemailer SMTP primary, Resend API secondary)

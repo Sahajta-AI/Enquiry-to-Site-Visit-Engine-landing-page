@@ -105,6 +105,9 @@
       var br = browserSend('standard', name, { content_name: BOTH[name] }, id);
       var sv = await serverSend(name, id, 'sandbox');
       logEvent(name, id, target, br, sv);
+    } else if (name === 'QualifiedAfterCall' || name === 'Purchase') {
+      var suffix = name === 'Purchase' ? '-won' : '-qualified';
+      logEvent(name, id + suffix, target, 'not sent (server only)', await serverSend(name, id, 'sandbox'));
     } else if (name === 'QualifiedBooking') {
       logEvent(name, id + '-q', target, 'not sent (server only)', await serverSend(name, id + '-q', 'sandbox'));
     }
@@ -158,6 +161,7 @@
       return;
     }
     info = r.data;
+    showOdooLast(info.odooLastGoodRun);
     $('lock').hidden = true;
     $('app').hidden = false;
 
@@ -177,6 +181,18 @@
   $('pw').addEventListener('keydown', function (e) { if (e.key === 'Enter') unlock(); });
   $('events').addEventListener('click', function (e) { var n = e.target.getAttribute('data-ev'); if (n) runEvent(n); });
   $('new-events').addEventListener('click', function (e) { var n = e.target.getAttribute('data-ev'); if (n) runEvent(n); });
+  $('odoo-events').addEventListener('click', function (e) { var n = e.target.getAttribute('data-ev'); if (n) runEvent(n); });
+  $('odoo-check').addEventListener('click', async function () {
+    log('--- Check Odoo now (tests: only "[TEST] " leads, Sandbox) ---');
+    var r = await api({ action: 'odoo-check' });
+    var d = r.data || {};
+    (d.log || []).forEach(function (l) { log('  ' + l); });
+    log('Result: ' + (d.result || ('HTTP ' + r.status)));
+    showOdooLast(d.lastGoodRun);
+  });
+  function showOdooLast(at) {
+    $('odoo-last').textContent = 'Signal job, last good run: ' + (at ? new Date(at).toLocaleString('en-GB') : 'none yet');
+  }
   $('journey').addEventListener('click', journey);
   $('live-send').addEventListener('click', liveCheck);
   $('to-live').addEventListener('click', function () { window.location.href = '/tracking-test?live=1'; });
