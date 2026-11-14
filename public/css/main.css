@@ -158,25 +158,33 @@ img, video {
   color: var(--ink-soft);
 }
 
-/* What people tell us: message screenshots with the praise highlighted */
+/* What people tell us: light message cards in 3 columns of different heights (masonry),
+   small gaps, thin borders, yellow highlighter on the key words. Each card is trimmed to where
+   its message ends (aspect-ratio on .shot), so the wall has a mix of tall and short cards. */
 .wall-section .section-title {
   text-align: center;
   margin-bottom: 2rem;
 }
 
 .wall-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1.5rem;
-  align-items: start;
+  columns: 3;
+  column-gap: 0.875rem;
 }
 
 .shot {
   position: relative;
+  display: block;
+  break-inside: avoid;
+  margin: 0 0 0.875rem;
   border: 1px solid var(--border-light);
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
   background: #fff;
+  box-shadow: 0 1px 2px rgba(20, 20, 20, 0.04);
+}
+
+.shot-inner {
+  position: relative; /* the highlights are placed on the full screenshot, so a trimmed card keeps them in place */
 }
 
 .shot img {
@@ -185,28 +193,34 @@ img, video {
   height: auto;
 }
 
-.shot-hl {
-  position: absolute;
-  background: rgba(255, 214, 0, 0.55);
-  mix-blend-mode: multiply;
-  border-radius: 4px;
-  pointer-events: none;
+/* Dark-mode screenshots shown as light cards, like the rest of the wall */
+.shot--dark img {
+  filter: invert(1) hue-rotate(180deg);
 }
 
-.shot--dark .shot-hl {
-  background: rgba(214, 170, 30, 0.55);
-  mix-blend-mode: screen;
+.shot-hl {
+  position: absolute;
+  background: rgba(255, 221, 0, 0.6);
+  mix-blend-mode: multiply;
+  border-radius: 3px;
+  pointer-events: none;
 }
 
 .wall-cta {
   display: flex;
   justify-content: center;
-  margin-top: 2.5rem;
+  margin-top: 2.25rem;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 1023px) {
   .wall-grid {
-    grid-template-columns: 1fr;
+    columns: 2;
+  }
+}
+
+@media (max-width: 599px) {
+  .wall-grid {
+    columns: 1;
   }
 }
 
