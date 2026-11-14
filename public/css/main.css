@@ -132,7 +132,7 @@ img, video {
   align-items: center;
   justify-content: center;
   gap: 0.85rem;
-  margin-top: 1.25rem;
+  margin-top: 1rem; /* inside the button box, centred under the button (5.3) */
 }
 
 .faces-row {
