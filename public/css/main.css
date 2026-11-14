@@ -572,7 +572,8 @@ html[data-angle="noshow"] .h1-noshow {
   list-style: none;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start; /* the block is centred on the page; its lines start at the same point, so the ticks line up */
+  width: fit-content;
   gap: 1.1rem;
   max-width: 640px;
   margin: 0 auto;
@@ -624,15 +625,15 @@ html[data-angle="noshow"] .h1-noshow {
    ========================================================================== */
 .video-head {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1.5rem;
+  flex-direction: column;
+  align-items: center; /* every section heading is centred, like the hero */
+  gap: 1rem;
   margin-bottom: 2.25rem;
 }
 
 .video-head .section-title {
-  text-align: left;
-  margin: 0;
+  text-align: center;
+  margin: 0 auto;
   max-width: 760px;
 }
 
@@ -790,6 +791,9 @@ video::-webkit-media-controls-overlay-play-button {
 }
 
 .cold-title {
+  text-align: center;
+  margin-left: auto;
+  margin-right: auto;
   color: var(--cream);
   font-size: clamp(1.8rem, 3.8vw, 2.8rem);
   font-weight: 700;
@@ -805,7 +809,8 @@ video::-webkit-media-controls-overlay-play-button {
   font-size: clamp(1.0625rem, 2vw, 1.3rem);
   line-height: 1.6;
   max-width: 680px;
-  margin-bottom: 3.5rem;
+  text-align: center;
+  margin: 0 auto 3.5rem;
 }
 
 .cold-stat {
@@ -892,6 +897,9 @@ video::-webkit-media-controls-overlay-play-button {
 }
 
 .cold-close {
+  text-align: center;
+  margin-left: auto;
+  margin-right: auto;
   font-family: var(--font-heading);
   font-size: clamp(1.6rem, 3.6vw, 2.6rem);
   font-weight: 700;
@@ -1682,7 +1690,7 @@ video::-webkit-media-controls-overlay-play-button {
 
   .video-head {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
   }
 
   .cold-section {
