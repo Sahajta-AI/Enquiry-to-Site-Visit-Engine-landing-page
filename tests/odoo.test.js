@@ -190,8 +190,10 @@ const sendLead = async (b) => { const r = await post('/api/lead', b); await sett
 const leadOf = (email) => leads.filter(l => l.email_from === email.toLowerCase());
 const notesOf = (id) => notes.filter(x => x.id === id).map(x => x.body);
 // The first note on a new lead repeats its Notes in the chatter (Shubhang, 14 Nov); later notes are what these tests count
-const isFirstNote = (x) => /Agreed to be contacted:/.test(x.body) && !/^(Filled the form again|Details changed|Came back)/.test(x.body);
+const isFirstNote = (x) => /Agreed to be contacted:|No form answers/.test(x.body) && !/^(Filled the form again|Details changed|Came back)/.test(x.body);
 const laterNotes = () => notes.filter(x => !isFirstNote(x));
+// A new lead's details live only in its first log note (Shubhang, 14 Nov), never in the Notes field
+const detailsOf = (l) => { assert.ok(!l.description, 'nothing in the Notes field'); const n = notes.find(x => x.id === l.id); return n ? n.body : ''; };
 const actsOf = (id, summary) => acts.filter(x => x.res_id === id && (!summary || x.summary === summary));
 
 // ---------------- 5.1 to 5.3: the lead ----------------
@@ -215,9 +217,9 @@ test('5.2 a Meta visit: one "[TEST]" lead with every field, no contact, no tags,
   assert.strictEqual(l.campaign_id, utmCampaigns[0].id);
   assert.strictEqual(utmCampaigns[0].title, '[TEST] Odoo');
   assert.strictEqual(utmCampaigns[0].is_auto_campaign, true);
-  assert.ok(l.description.includes(Q1_FIT) && l.description.includes(Q2_FIT) && l.description.includes('Good fit: yes'));
-  assert.ok(l.description.includes('Test set') && l.description.includes('angle speed'));
-  assert.ok(l.description.includes('Agreed to be contacted'));
+  assert.ok(detailsOf(l).includes(Q1_FIT) && detailsOf(l).includes(Q2_FIT) && detailsOf(l).includes('Good fit: yes'));
+  assert.ok(detailsOf(l).includes('Test set') && detailsOf(l).includes('angle speed'));
+  assert.ok(detailsOf(l).includes('Agreed to be contacted'));
   assert.strictEqual(actsOf(l.id, 'WhatsApp follow-up').length, 1, 'Odoo adds the follow-up reminder');
   const all = JSON.stringify({ leads, notes });
   assert.ok(!all.includes('TEST123') && !all.includes('fbclid'), 'no fbclid in Odoo');
@@ -233,7 +235,7 @@ test('5.2 NEW_TRACKING off: leads still go in, but with no campaign and no ad na
   const [l] = leadOf(b.email);
   assert.ok(l && !l.campaign_id && !utmCampaigns.length);
   assert.strictEqual(l.x_studio_lead_channel, 'meta_ads');
-  assert.ok(!l.description.includes('Test set'));
+  assert.ok(!detailsOf(l).includes('Test set'));
 });
 
 test('5.2 no ad keys: Lead Channel empty, "Website: no ad click found", no reminder, stars by answers', async () => {
@@ -242,7 +244,7 @@ test('5.2 no ad keys: Lead Channel empty, "Website: no ad click found", no remin
   await sendLead(b);
   const [l] = leadOf(b.email);
   assert.ok(!l.x_studio_lead_channel && !l.source_id);
-  assert.ok(l.description.includes('Website: no ad click found'));
+  assert.ok(detailsOf(l).includes('Website: no ad click found'));
   assert.strictEqual(l.priority, '1');
   assert.strictEqual(acts.length, 0);
   assert.strictEqual(ol.stars(Q1_FIT, 'I am only exploring right now'), '2');
@@ -299,7 +301,7 @@ test('5.3 lost: reopened to New with one note and only "Came back" open; won: a 
   l.stage_id = STAGES['Deal Closed'];
   await sendLead(leadBody({ email: b.email }));
   assert.strictEqual(leads.length, 2);
-  assert.ok(leads[1].description.startsWith('<p>Past client</p>'));
+  assert.ok(detailsOf(leads[1]).startsWith('<p>Past client</p>'));
 });
 
 test('5.3 a test only touches "[TEST]" leads and a real person ignores them', async () => {
@@ -359,7 +361,7 @@ test('5.4 a booking made in Cal.com with no lead: a new lead from the booking, s
   await settle();
   assert.strictEqual(leads.length, 1);
   assert.strictEqual(leads[0].priority, '0');
-  assert.ok(leads[0].description.includes('No form answers (booked in Cal.com)'));
+  assert.ok(detailsOf(leads[0]).includes('No form answers (booked in Cal.com)'));
   assert.strictEqual(leads[0].stage_id, STAGES['Call Scheduled']);
   assert.ok(leads[0].name.startsWith('[TEST] '));
 });
