@@ -469,17 +469,7 @@ img, video {
   text-wrap: balance;
 }
 
-/* Headline versions by ad angle: only the matching one is shown */
-.h1-variant {
-  display: none;
-}
-
-html[data-angle="default"] .h1-default,
-html[data-angle="paid"] .h1-paid,
-html[data-angle="speed"] .h1-speed,
-html[data-angle="noshow"] .h1-noshow {
-  display: inline;
-}
+.nowrap { white-space: nowrap; }
 
 .mark {
   background-image: linear-gradient(var(--gold), var(--gold));
