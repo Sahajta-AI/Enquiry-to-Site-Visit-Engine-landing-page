@@ -156,6 +156,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function goToStep(stepNumber) {
     wizardState.currentStep = stepNumber;
+    // The time step is wider on laptops: the calendar and the times side by side
+    const box = document.querySelector('#intake-modal .modal-container');
+    if (box) box.classList.toggle('is-time-step', stepNumber === 4);
 
     if (stepNumber === 1 && !formShownAt) formShownAt = Date.now();
     if (stepNumber === 1 && !formStartTracked) { formStartTracked = true; track.event('FormStart'); }
@@ -400,7 +403,7 @@ document.addEventListener('DOMContentLoaded', () => {
       wizardState.lead_event_id = /^[0-9a-f-]{36}$/i.test(kept) ? kept : newId();
       try { sessionStorage.setItem('sv_lead_event_id', wizardState.lead_event_id); } catch (err) {}
     }
-    wizardState.consent_at = new Date().toISOString(); // when they pressed "See open times", under the consent line
+    wizardState.consent_at = new Date().toISOString(); // when they pressed "See open times" (consent is covered in the privacy policy, Shubhang 11 Nov)
     sendLeadRecord(0);
 
     leaveArmed = true;
@@ -651,15 +654,9 @@ document.addEventListener('DOMContentLoaded', () => {
         slotsHtml = `<p class="cal-status">${msg(picker.noTimesWeek ? 'msgNoneWeek' : 'msgNone')}</p>`;
       }
 
-      const formattedSelectedDate = picker.selectedDate ? picker.selectedDate.toLocaleDateString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric'
-      }) : '';
 
       const activeFullSlot = (picker.selectedDate && picker.selectedTimeStr)
-        ? `${formattedSelectedDate} at ${picker.selectedTimeStr} (${wizardState.timezone})`
+        ? niceSlot(picker.selectedDate, picker.selectedTimeStr)
         : '';
 
       const isConfirmDisabled = !picker.selectedDate || !picker.selectedTimeStr;
@@ -734,7 +731,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const sel = picker.selectedDate;
           wizardState.slotDate = `${sel.getFullYear()}-${pad(sel.getMonth() + 1)}-${pad(sel.getDate())}`;
           wizardState.slotTime = picker.selectedTimeStr;
-          const finalSlotStr = `${sel.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at ${picker.selectedTimeStr} (${wizardState.timezone})`;
+          const finalSlotStr = niceSlot(sel, picker.selectedTimeStr);
           handleSlotConfirmation(finalSlotStr);
         });
       }
@@ -746,6 +743,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     fetchAndRenderCalendar();
+  }
+
+  // "Thu, 12 Nov at 12:35 pm IST" ("{city} time" outside India), never "(Asia/Calcutta)"
+  function niceSlot(date, timeStr) {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const tz = wizardState.timezone || 'Asia/Kolkata';
+    const zone = (tz === 'Asia/Kolkata' || tz === 'Asia/Calcutta') ? 'IST' : tz.split('/').pop().replace(/_/g, ' ') + ' time';
+    const time = String(timeStr || '').replace(/^0(\d)/, '$1').replace(/\s*([AP])M$/i, (m, x) => ' ' + x.toLowerCase() + 'm');
+    return `${days[date.getDay()]}, ${date.getDate()} ${months[date.getMonth()]} at ${time} ${zone}`;
   }
 
   // The booking failed: stay on the time screen, show the message, reload the times, let the visitor pick again

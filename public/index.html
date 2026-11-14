@@ -33,7 +33,7 @@
 
   <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/syne-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/css/main.css?v=2.6.0">
+  <link rel="stylesheet" href="/css/main.css?v=2.7.0">
 
   <!-- A nudge email's link is /?r={code}. Keep the code in session memory and take it out of the address
        BEFORE the Meta Pixel (and Clarity, once added) load, so neither records it. -->
@@ -454,7 +454,6 @@
               <span class="option-label-text">We’re still planning</span>
             </button>
           </div>
-          <p class="wizard-hint">2 quick questions. Takes 30 seconds. Your answers help us prepare your call.</p>
         </div>
 
         <!-- STEP 2: Q2 -->
@@ -485,6 +484,7 @@
           <p class="details-line">You’ll get the Google Meet link by email and a reminder on WhatsApp.</p>
 
           <form id="intake-contact-form" novalidate>
+            <div class="form-row">
             <div class="form-group">
               <label class="form-label" for="field-name">Full name</label>
               <input type="text" id="field-name" class="form-input" required autocomplete="name" enterkeyhint="next">
@@ -497,6 +497,9 @@
               <span class="error-msg" id="err-company">Please enter your company or project name.</span>
             </div>
 
+            </div>
+
+            <div class="form-row">
             <div class="form-group">
               <label class="form-label" for="field-email">Work email</label>
               <input type="email" id="field-email" class="form-input" required autocomplete="email" enterkeyhint="next">
@@ -514,6 +517,7 @@
               <button type="button" class="link-btn" id="toggle-intl">Not an Indian number?</button>
               <button type="button" class="link-btn" id="toggle-india" hidden>Use an Indian number</button>
             </div>
+            </div>
 
             <!-- Spam trap: hidden from people and screen readers, named so no browser autofills it -->
             <div class="hp-field" aria-hidden="true">
@@ -521,7 +525,6 @@
               <input type="text" id="field-hp-note" name="hp_note" tabindex="-1" autocomplete="off">
             </div>
 
-            <p class="consent-line">By continuing, you agree to get WhatsApp messages, texts (SMS) and calls from Sahajta AI about your Lead Conversion Clarity Call. Our privacy policy, linked at the bottom of this page, explains how we use your details.</p>
 
             <div class="wizard-footer">
               <button type="button" class="btn-back" id="btn-step-3-back">Back</button>
@@ -547,6 +550,6 @@
   </div>
 
   <script src="/js/tracking.js?v=1.0.0" defer></script>
-  <script src="/js/app.js?v=2.5.1" defer></script>
+  <script src="/js/app.js?v=2.6.0" defer></script>
 </body>
 </html>

@@ -1126,15 +1126,20 @@ video::-webkit-media-controls-overlay-play-button {
   border-radius: 16px;
   width: 100%;
   max-width: 560px;
-  height: 640px;
+  height: auto; /* as tall as its content: no big empty space under a short step */
   max-height: calc(100dvh - 3rem);
+  transition: transform var(--transition-normal), max-width var(--transition-normal);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   box-shadow: 0 40px 80px -30px rgba(0, 0, 0, 0.6);
   position: relative;
   transform: translateY(18px);
-  transition: transform var(--transition-normal);
+}
+
+/* Laptops: the time step is wider, so the calendar and the times sit side by side */
+.modal-container.is-time-step {
+  max-width: 880px;
 }
 
 .modal-backdrop.active .modal-container {
@@ -1398,10 +1403,10 @@ video::-webkit-media-controls-overlay-play-button {
   display: none;
 }
 
-.consent-line {
-  font-size: 0.875rem;
-  line-height: 1.5;
-  color: var(--ink-mute);
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* laptops: name | company, email | WhatsApp */
+  gap: 0 1rem;
 }
 
 /* Time */
@@ -1458,9 +1463,10 @@ video::-webkit-media-controls-overlay-play-button {
 }
 
 .cal-layout-row {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); /* laptops: calendar | times */
+  gap: 1.75rem;
+  align-items: start;
 }
 
 .month-nav-header {
@@ -1728,6 +1734,15 @@ video::-webkit-media-controls-overlay-play-button {
 
   .options-group {
     grid-template-columns: 1fr;
+  }
+
+  .form-row,
+  .cal-layout-row {
+    grid-template-columns: 1fr;
+  }
+
+  .cal-layout-row {
+    gap: 1.25rem;
   }
 
   .option-card,
