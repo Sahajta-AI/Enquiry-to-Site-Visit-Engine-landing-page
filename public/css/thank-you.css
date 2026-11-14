@@ -631,38 +631,6 @@ body.ty {
   margin: 0 auto;
 }
 
-/* Proof */
-.ty-proof { padding: 48px 0; }
-
-.ty-proof .faces-row img { border-color: var(--ty-white); }
-
-.ty-proof .client-faces {
-  margin-top: 0;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.ty-proof-link {
-  margin-top: 14px;
-  text-align: center;
-}
-
-.ty-proof-link a {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 44px;
-  font-weight: 700;
-  color: var(--ink);
-  text-decoration: underline;
-  text-decoration-color: var(--ty-gold);
-  text-underline-offset: 4px;
-  transition: color var(--transition-fast);
-}
-
-.ty-proof-link a:hover { color: var(--ty-gold-small); }
-.ty-proof-link svg { color: var(--ty-gold); }
-
 /* ---------- Laptop ---------- */
 @media (min-width: 768px) {
   .ty-top { padding: 28px 0 56px; }
@@ -694,7 +662,6 @@ body.ty {
 
   .ty-sec { padding: 96px 0; }
 
-  .ty-proof { padding: 80px 0; }
 
   .ty-h2 { font-size: 2.125rem; margin-bottom: 40px; }
 
