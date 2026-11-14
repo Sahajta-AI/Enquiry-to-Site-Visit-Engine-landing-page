@@ -160,19 +160,16 @@
   // ---------- Settings-driven parts ----------
   function applySettings() {
     var hasVideo = !!settings.briefingVideoUrl;
-    var heading = $('before-h');
     var hwTitle = $('ty-hw-title').firstElementChild;
 
     show($('ty-video-step'), hasVideo);
     show($('ty-watch'), hasVideo);
 
     if (hasVideo) {
-      heading.innerHTML = '<span id="before-h-pre">Then do these 2 things </span><span class="ty-hl">before your call</span>:';
-      hwTitle.textContent = '2. Your homework: get 3 numbers ready';
+      hwTitle.textContent = '2. Get these 3 numbers ready'; // with the video it is step 2
       setupVideo();
     } else {
-      heading.innerHTML = '<span id="before-h-pre">Then do this </span><span class="ty-hl">before your call</span>:';
-      hwTitle.textContent = 'Your homework: get 3 numbers ready';
+      hwTitle.textContent = 'Get these 3 numbers ready';
     }
 
     var demo = String(settings.demoWhatsappNumber || '').replace(/\D/g, '');
