@@ -90,10 +90,7 @@
       }
       h1.appendChild(document.createTextNode('.'));
 
-      var sub = $('ty-sub');
-      sub.setAttribute('data-clarity-mask', 'true');
-      sub.textContent = 'Your Lead Conversion Clarity Call with Shubhang is on ' + when + '.';
-      show(sub, true);
+      // The date shows once, in the card ("Scheduled for" and the time in bold); no grey line under the heading
 
       show($('ty-tick'), true);
       show($('ty-card-label'), true);
