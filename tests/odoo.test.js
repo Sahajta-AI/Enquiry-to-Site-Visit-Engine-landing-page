@@ -189,6 +189,9 @@ function leadBody(over) {
 const sendLead = async (b) => { const r = await post('/api/lead', b); await settle(); return r; };
 const leadOf = (email) => leads.filter(l => l.email_from === email.toLowerCase());
 const notesOf = (id) => notes.filter(x => x.id === id).map(x => x.body);
+// The first note on a new lead repeats its Notes in the chatter (Shubhang, 14 Nov); later notes are what these tests count
+const isFirstNote = (x) => /Agreed to be contacted:/.test(x.body) && !/^(Filled the form again|Details changed|Came back)/.test(x.body);
+const laterNotes = () => notes.filter(x => !isFirstNote(x));
 const actsOf = (id, summary) => acts.filter(x => x.res_id === id && (!summary || x.summary === summary));
 
 // ---------------- 5.1 to 5.3: the lead ----------------
@@ -252,7 +255,8 @@ test('5.3 retries and Back: the same call twice or at once is one lead; Back wit
   await Promise.all([post('/api/lead', b), post('/api/lead', b)]);
   await settle();
   assert.strictEqual(leadOf(b.email).length, 1);
-  assert.strictEqual(notes.length, 0, 'no "filled again" note for a retry');
+  assert.strictEqual(laterNotes().length, 0, 'no "filled again" note for a retry');
+  assert.strictEqual(notes.filter(isFirstNote).length, 1, 'the new lead gets its details once in the chatter');
 
   const back = Object.assign({}, b, { email: 'changed' + n + '@example.com' });
   await sendLead(back);
@@ -305,7 +309,7 @@ test('5.3 a test only touches "[TEST]" leads and a real person ignores them', as
   await sendLead(b);
   assert.strictEqual(leads.length, 2, 'a [TEST] lead was added; the real one was left alone');
   assert.strictEqual(leads[0].stage_id, 1);
-  assert.strictEqual(notes.length, 0);
+  assert.ok(notes.every(x => x.id !== 5), 'nothing written on the real lead');
 });
 
 // ---------------- 5.4 to 5.7: bookings ----------------
