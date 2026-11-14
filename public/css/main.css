@@ -193,17 +193,22 @@ img, video {
   height: auto;
 }
 
-/* Dark-mode screenshots shown as light cards, like the rest of the wall */
-.shot--dark img {
-  filter: invert(1) hue-rotate(180deg);
-}
-
 .shot-hl {
   position: absolute;
   background: rgba(255, 221, 0, 0.6);
   mix-blend-mode: multiply;
   border-radius: 3px;
   pointer-events: none;
+}
+
+/* Dark-mode screenshots keep their own colours; the highlighter is lightened onto the dark bubbles */
+.shot--dark {
+  background: #000;
+}
+
+.shot--dark .shot-hl {
+  background: rgba(214, 170, 30, 0.55);
+  mix-blend-mode: screen;
 }
 
 .wall-cta {
