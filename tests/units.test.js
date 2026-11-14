@@ -205,3 +205,20 @@ test('6.2 Cal.com metadata limits: at most 50 keys, keys up to 40 characters, va
   assert.ok(!('x'.repeat(41) in out));
   assert.strictEqual(out.long, undefined === out.long ? undefined : 'y'.repeat(500));
 });
+
+test('briefing video: hosted file by default, env overrides it, "none" hides it', () => {
+  const lcfg = require(require('path').join(__dirname, '..', 'lib', 'config'));
+  const keep = { u: process.env.BRIEFING_VIDEO_URL, p: process.env.BRIEFING_VIDEO_POSTER, c: process.env.BRIEFING_VIDEO_CAPTIONS };
+  try {
+    delete process.env.BRIEFING_VIDEO_URL; delete process.env.BRIEFING_VIDEO_POSTER; delete process.env.BRIEFING_VIDEO_CAPTIONS;
+    assert.deepStrictEqual(lcfg.briefingVideo(), { url: '/videos/briefing.mp4', poster: '/videos/briefing-poster.jpg', captions: '/videos/briefing.vtt' });
+    process.env.BRIEFING_VIDEO_URL = 'https://cdn.example.test/v.mp4';
+    assert.deepStrictEqual(lcfg.briefingVideo(), { url: 'https://cdn.example.test/v.mp4', poster: '', captions: '' });
+    process.env.BRIEFING_VIDEO_URL = 'none';
+    assert.strictEqual(lcfg.briefingVideo().url, '');
+  } finally {
+    for (const [k, v] of [['BRIEFING_VIDEO_URL', keep.u], ['BRIEFING_VIDEO_POSTER', keep.p], ['BRIEFING_VIDEO_CAPTIONS', keep.c]]) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  }
+});
