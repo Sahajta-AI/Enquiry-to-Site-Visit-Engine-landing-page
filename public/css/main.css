@@ -173,16 +173,9 @@ img, video {
    Short messages in big type, long ones small, so the wall feels full. Names and photos stay blurred. */
 .wall-section .section-title {
   text-align: center;
-  margin-bottom: 0.5rem;
+  margin-bottom: 2rem;
 }
 
-.wall-sub {
-  text-align: center;
-  color: var(--ink-soft);
-  font-size: 0.9375rem;
-  margin: 0 auto 2rem;
-  max-width: 40rem;
-}
 
 .tw {
   display: grid;
