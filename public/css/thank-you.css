@@ -112,7 +112,7 @@ body.ty {
   font-size: 1.75rem;           /* about 28px on a phone */
   line-height: 1.12;
   letter-spacing: -0.025em;
-  font-weight: 800;
+  font-weight: 700; /* Syne at 700, as on the landing page */
   text-wrap: balance;
   margin: 18px 0 8px;
 }
@@ -352,7 +352,7 @@ body.ty {
   font-size: 1.625rem;
   line-height: 1.18;
   letter-spacing: -0.025em;
-  font-weight: 800;
+  font-weight: 700;
   text-wrap: balance;
   margin-bottom: 28px;
 }
