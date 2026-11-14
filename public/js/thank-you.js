@@ -55,13 +55,6 @@
     return !tz || tz === 'Asia/Kolkata' || tz === 'Asia/Calcutta';
   }
 
-  function formatDisplayNumber(num) {
-    // 919731173205 -> +91 97311 73205
-    var d = String(num).replace(/\D/g, '');
-    if (d.length === 12 && d.indexOf('91') === 0) return '+91 ' + d.slice(2, 7) + ' ' + d.slice(7);
-    return '+' + d;
-  }
-
   // ---------- Page state ----------
   var booking = readBooking();
   var confirmMessage = 'YES';
@@ -115,36 +108,17 @@
     }
   }
 
-  // ---------- Confirm buttons ----------
-  function isTouchDevice() {
-    return ('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0;
-  }
-
+  // ---------- Confirm button: WhatsApp only (the text/SMS option was removed, Shubhang 11 Nov) ----------
   function wireButtons() {
     var wa = $('btn-wa');
-    var sms = $('btn-sms');
-    var laptop = $('ty-laptop-text');
     var after = $('ty-after-tap');
     var number = String(settings.whatsappNumber).replace(/\D/g, '') || '919731173205';
 
     wa.setAttribute('href', 'https://wa.me/' + number + '?text=' + encodeURIComponent(confirmMessage));
-    sms.setAttribute('href', 'sms:+' + number + '?&body=' + encodeURIComponent(confirmMessage));
-    laptop.textContent = 'Text YES to ' + formatDisplayNumber(number);
-
-    // Laptops (no touch screen) can't open a messages app: show the number in place of the text button
-    if (!isTouchDevice()) {
-      show(sms, false);
-      show(laptop, true);
-    }
 
     wa.addEventListener('click', function () {
       track('ConfirmWhatsApp');
       after.textContent = 'WhatsApp is open. Send the message there to confirm.';
-      show(after, true);
-    });
-    sms.addEventListener('click', function () {
-      track('ConfirmText');
-      after.textContent = 'Your messages app is open. Send the message there to confirm.';
       show(after, true);
     });
   }
@@ -253,7 +227,5 @@
   function wireButtonLinksOnly() {
     var number = String(settings.whatsappNumber).replace(/\D/g, '') || '919731173205';
     $('btn-wa').setAttribute('href', 'https://wa.me/' + number + '?text=' + encodeURIComponent(confirmMessage));
-    $('btn-sms').setAttribute('href', 'sms:+' + number + '?&body=' + encodeURIComponent(confirmMessage));
-    $('ty-laptop-text').textContent = 'Text YES to ' + formatDisplayNumber(number);
   }
 })();
