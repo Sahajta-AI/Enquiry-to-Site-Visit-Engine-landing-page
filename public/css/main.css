@@ -699,6 +699,14 @@ html[data-angle="noshow"] .h1-noshow {
   display: block;
 }
 
+/* No player bar (0:00, volume, full screen) until someone presses play: the controls attribute is only added on play,
+   and until then the browser's own control strip is hidden too (some phones draw it anyway) */
+.video-wrapper:not(.has-controls) video::-webkit-media-controls,
+.video-wrapper:not(.has-controls) video::-webkit-media-controls-panel,
+.video-wrapper:not(.has-controls) video::-webkit-media-controls-enclosure {
+  display: none !important;
+}
+
 /* Hide only the central native start button; keep the controls bar */
 video::-webkit-media-controls-start-playback-button,
 video::-webkit-media-controls-overlay-play-button {
