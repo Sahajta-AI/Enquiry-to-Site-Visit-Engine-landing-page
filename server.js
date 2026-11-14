@@ -179,7 +179,10 @@ app.get('/api/config', (req, res) => {
     briefingVideoUrl: config.BRIEFING_VIDEO_URL,
     briefingVideoPoster: config.BRIEFING_VIDEO_POSTER,
     briefingVideoCaptions: config.BRIEFING_VIDEO_CAPTIONS,
-    demoWhatsappNumber: config.DEMO_WHATSAPP_NUMBER
+    demoWhatsappNumber: config.DEMO_WHATSAPP_NUMBER,
+    salesVideoUrl: lcfg.salesVideo().url,
+    salesVideoPoster: lcfg.salesVideo().poster,
+    salesVideoCaptions: lcfg.salesVideo().captions
   });
 });
 

@@ -1000,19 +1000,40 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // The sales video (once it is on the page, with id="sales-video"): ViewContent at the first start,
-  // VideoProgress at 25, 50, 75 and 95 percent (each once)
+  // ---------- Sales video (Build Brief 5.2, Notion card 11 Nov) ----------
+  // 1. Starts on its own, muted, captions on. 2. A big gold "Click for sound" button over it.
+  // 3. On tap: restarts from 0:00 with sound, captions stay on. 4. If the phone blocks autoplay
+  // (low-power mode, data saver): the poster with the same button, which plays it with sound.
+  // Tracking: ViewContent when it starts with sound (a muted autoplay is not a view), then
+  // VideoProgress at 25, 50, 75 and 95 percent of that watch (each once).
   const salesVideo = document.getElementById('sales-video');
-  if (salesVideo) {
-    let started = false;
+  const salesBtn = document.getElementById('sales-sound-btn');
+  const salesPanel = document.getElementById('sales-panel');
+  if (salesVideo && salesBtn && salesPanel) {
+    let withSound = false;
     const reached = {};
-    salesVideo.addEventListener('play', () => {
-      if (started) return;
-      started = true;
+
+    const showCaptions = () => {
+      const t = salesVideo.textTracks && salesVideo.textTracks[0];
+      if (t) t.mode = 'showing';
+    };
+
+    const startWithSound = () => {
+      withSound = true;
+      salesBtn.hidden = true;
+      salesPanel.classList.add('has-sound');
+      salesVideo.muted = false;
+      salesVideo.currentTime = 0;
+      salesVideo.controls = true;
+      showCaptions();
       track.event('ViewContent', { content_name: 'Sales video' }, false);
-    });
+      salesVideo.play().catch(() => {});
+    };
+
+    salesBtn.addEventListener('click', startWithSound);
+
     salesVideo.addEventListener('timeupdate', () => {
-      if (!salesVideo.duration || !isFinite(salesVideo.duration)) return;
+      if (!withSound || !salesVideo.duration || !isFinite(salesVideo.duration)) return;
       const pct = (salesVideo.currentTime / salesVideo.duration) * 100;
       [25, 50, 75, 95].forEach(mark => {
         if (pct >= mark && !reached[mark]) {
@@ -1021,6 +1042,45 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     });
+
+    // Only one video plays at a time: the sales video pauses when a client video starts, and the other way round
+    salesVideo.addEventListener('play', () => {
+      if (!withSound) return;
+      document.querySelectorAll('.video-wrapper video').forEach(v => { if (!v.paused) v.pause(); });
+    });
+    document.querySelectorAll('.video-wrapper video').forEach(v => {
+      v.addEventListener('play', () => { if (!salesVideo.paused) salesVideo.pause(); });
+    });
+
+    const setUp = (cfg) => {
+      const url = cfg && cfg.salesVideoUrl;
+      if (!url) return; // no video address yet: the placeholder stays
+      if (cfg.salesVideoPoster) salesVideo.poster = cfg.salesVideoPoster;
+      if (cfg.salesVideoCaptions) {
+        const cap = document.createElement('track');
+        cap.kind = 'captions';
+        cap.label = 'English';
+        cap.srclang = 'en';
+        cap.src = cfg.salesVideoCaptions;
+        cap.default = true;
+        salesVideo.appendChild(cap);
+      }
+      salesVideo.preload = 'auto';
+      salesVideo.src = url;
+      salesVideo.hidden = false;
+      const ph = document.getElementById('sales-placeholder');
+      if (ph) ph.hidden = true;
+      salesPanel.classList.add('has-video');
+      salesBtn.hidden = false;
+      showCaptions();
+      salesVideo.addEventListener('loadedmetadata', showCaptions, { once: true });
+      // Muted autoplay; if the phone blocks it, the poster and the button stay (the button plays it with sound)
+      const tryPlay = salesVideo.play();
+      if (tryPlay && tryPlay.catch) tryPlay.catch(() => salesPanel.classList.add('autoplay-blocked'));
+    };
+
+    const cfgPromise = window.SVTrack ? window.SVTrack.config() : fetch('/api/config').then(r => r.json());
+    Promise.resolve(cfgPromise).then(setUp).catch(() => {});
   }
 
   // Video carousel arrows
