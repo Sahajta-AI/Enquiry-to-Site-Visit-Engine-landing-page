@@ -393,7 +393,13 @@ document.addEventListener('DOMContentLoaded', () => {
     wizardState.whatsapp_number = phoneIsInternational ? phoneIntlInput.value.trim() : phoneInput.value;
 
     // Keep this visit's checked details on the server for 24 hours, and send Lead from there too (shared event ID)
-    if (!wizardState.lead_event_id) wizardState.lead_event_id = newId();
+    // One Lead event ID per visit, kept through a reload (sessionStorage), as the Backend Brief 5.3 asks
+    if (!wizardState.lead_event_id) {
+      let kept = '';
+      try { kept = sessionStorage.getItem('sv_lead_event_id') || ''; } catch (err) {}
+      wizardState.lead_event_id = /^[0-9a-f-]{36}$/i.test(kept) ? kept : newId();
+      try { sessionStorage.setItem('sv_lead_event_id', wizardState.lead_event_id); } catch (err) {}
+    }
     wizardState.consent_at = new Date().toISOString(); // when they pressed "See open times", under the consent line
     sendLeadRecord(0);
 
@@ -837,6 +843,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ['q1_situation', 'q2_urgency', 'name', 'company', 'email', 'whatsapp_number', 'bookedSlot', 'slotDate', 'slotTime', 'lead_event_id', 'schedule_event_id', 'consent_at'].forEach(k => {
       wizardState[k] = '';
     });
+    try { sessionStorage.removeItem('sv_lead_event_id'); } catch (err) {} // after a booking, a new booking is a new visit
     leaveArmed = false;
     leaveSent = false;
     noTimesSent = false;

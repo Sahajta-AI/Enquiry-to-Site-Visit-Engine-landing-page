@@ -141,13 +141,20 @@
     }
 
     wa.addEventListener('click', function () {
+      track('ConfirmWhatsApp');
       after.textContent = 'WhatsApp is open. Send the message there to confirm.';
       show(after, true);
     });
     sms.addEventListener('click', function () {
+      track('ConfirmText');
       after.textContent = 'Your messages app is open. Send the message there to confirm.';
       show(after, true);
     });
+  }
+
+  // ---------- Part 9: new events (only fire when NEW_TRACKING is on; tracking.js checks) ----------
+  function track(name, params) {
+    try { if (window.SVTrack) window.SVTrack.newEvent(name, params || {}); } catch (e) {}
   }
 
   // ---------- Settings-driven parts ----------
@@ -171,6 +178,7 @@
     var demo = String(settings.demoWhatsappNumber || '').replace(/\D/g, '');
     if (demo) {
       $('btn-demo').setAttribute('href', 'https://wa.me/' + demo + '?text=' + encodeURIComponent('Hi'));
+      $('btn-demo').addEventListener('click', function () { track('DemoTap'); });
       show($('live-demo'), true);
     }
   }
@@ -209,14 +217,20 @@
       else video.pause();
     });
 
-    video.addEventListener('play', function () { wrap.classList.add('is-playing'); });
+    var started = false, sent90 = false;
+    video.addEventListener('play', function () {
+      wrap.classList.add('is-playing');
+      if (!started) { started = true; track('PreCallVideoStart'); }
+    });
     video.addEventListener('pause', function () { wrap.classList.remove('is-playing'); });
     video.addEventListener('ended', function () { wrap.classList.remove('is-playing'); });
 
     // "Watched" shows only after 90%, and stays after a reload (session memory)
     video.addEventListener('timeupdate', function () {
-      if (watched || !video.duration || !isFinite(video.duration)) return;
-      if (video.currentTime / video.duration >= 0.9) {
+      if (!video.duration || !isFinite(video.duration)) return;
+      if (video.currentTime / video.duration < 0.9) return;
+      if (!sent90) { sent90 = true; track('PreCallVideo90'); }
+      if (!watched) {
         watched = true;
         try { sessionStorage.setItem('sv_watched', '1'); } catch (e) {}
         show($('ty-watched'), true);

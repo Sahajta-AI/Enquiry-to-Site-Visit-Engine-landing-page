@@ -631,6 +631,19 @@ test('7.4 Cal.com refuses a booking: the normal error, one alert per person with
   assert.strictEqual(metaCalls.length, 0, 'no Schedule for a failed booking');
 });
 
+test('4 no Cal.com key: the booking fails with the normal error, never a fake "booked", and Shubhang gets the details', async () => {
+  reset();
+  const key = process.env.CAL_API_KEY;
+  delete process.env.CAL_API_KEY;
+  try {
+    const r = await post('/api/submit-lead', bookingBody({ email: 'nokey@example.com', name: 'No Key' }));
+    assert.strictEqual(r.status, 503);
+    assert.strictEqual(calBookingPosts.length, 0);
+    assert.ok(await waitFor(() => sent.some(e => e.subject === 'A booking could not be made' && /No Key/.test(e.text))));
+    assert.strictEqual(metaCalls.length, 0, 'no Schedule for a failed booking');
+  } finally { process.env.CAL_API_KEY = key; }
+});
+
 test('7.2 a retry with the same email and time does not book twice: reply with the booking that exists, Schedule again with the same ID', async () => {
   reset();
   const b = bookingBody({ email: 'retry@example.com' });

@@ -48,6 +48,21 @@ app.use((req, res, next) => {
   if (/^\/tracking-test(\.html)?$/.test(req.path)) res.setHeader('X-Robots-Tag', 'noindex');
   next();
 });
+// One plain log line per /api request: the endpoint, the status, the result or error code, the timing.
+// Never a name, email, number or query string. (Meta's fbtrace_id is on the Meta helper's own line.)
+app.use('/api', (req, res, next) => {
+  const started = Date.now();
+  let code = '';
+  const json = res.json.bind(res);
+  res.json = (body) => {
+    if (body && typeof body === 'object') code = body.code || body.result || body.status || (body.ok === true || body.success === true ? 'ok' : '');
+    return json(body);
+  };
+  res.on('finish', () => {
+    console.log(`🧾 [API] ${req.method} ${req.baseUrl}${req.path} status=${res.statusCode} result=${String(code || '-').slice(0, 40)} ms=${Date.now() - started}`);
+  });
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Clean Single-Page Routes (Legacy routes redirect to /)
@@ -498,7 +513,16 @@ app.post('/api/submit-lead', async (req, res) => {
   let googleMeetUrl = null;
   let timedOut = false;
 
-  if (calApiKey) {
+  // No Cal.com key means nothing can be booked: never let that look like a booking (Backend Brief, part 4)
+  if (!calApiKey) {
+    console.error('⚠️ [Cal.com booking error]: CAL_API_KEY is not set');
+    lafter.after(() => lalerts.send('A booking could not be made',
+      `The Cal.com key is missing on this server, so no booking can be made. Please reach out to this person.\n\n${detailsText}`,
+      `refused:${String(email).toLowerCase()}:${pickedTime}`, { backup: false }));
+    return fail(503, 'booking');
+  }
+
+  {
     // A retry after a timeout, with the same email and the same time, must not book twice: reply with the booking that exists
     let existing = null;
     try { existing = await lcal.findBookingAt(email, startDt.getTime()); } catch (e) { /* carry on: Cal.com decides */ }
@@ -653,6 +677,7 @@ async function dispatchEmail({ to, from, subject, text, html, config, isRetry = 
         host: config.SMTP_HOST || 'smtp.gmail.com',
         port: parseInt(config.SMTP_PORT) || 465,
         secure: parseInt(config.SMTP_PORT) === 465,
+        connectionTimeout: 8000, greetingTimeout: 8000, socketTimeout: 8000,
         auth: {
           user: config.SMTP_USER,
           pass: config.SMTP_PASS
@@ -692,6 +717,7 @@ async function dispatchEmail({ to, from, subject, text, html, config, isRetry = 
           'Authorization': `Bearer ${config.RESEND_API_KEY}`,
           'Content-Type': 'application/json'
         },
+        signal: AbortSignal.timeout(8000),
         body: JSON.stringify(payload)
       });
 

@@ -168,7 +168,9 @@ test('5.3 hashing: email, phone, names exactly as the brief says', () => {
   assert.strictEqual(metaLib.hashEmail('  Rohan@Example.COM '), sha('rohan@example.com'));
   assert.strictEqual(metaLib.hashPhone('9876543210'), sha('919876543210'));          // 91 and the 10 digits
   assert.strictEqual(metaLib.hashPhone('+971 50 123 4567'), sha('971501234567'));
-  assert.strictEqual(metaLib.hashPhone('+9710501234567'), sha('9710501234567'));      // digits as given with a +
+  assert.strictEqual(metaLib.hashPhone('+9710501234567'), sha('971501234567'));       // no 0 right after the country code
+  assert.strictEqual(metaLib.hashPhone('+44 07700 900123'), sha('447700900123'));
+  assert.strictEqual(metaLib.hashPhone('+1 415 555 0100'), sha('14155550100'));
   assert.strictEqual(metaLib.hashPhone(''), undefined);
   assert.deepStrictEqual(metaLib.nameParts('Rohan  Mehta-Rao'), { fn: 'rohan', ln: 'mehtarao' });
   assert.deepStrictEqual(metaLib.nameParts('Priya'), { fn: 'priya', ln: '' });
