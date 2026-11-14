@@ -93,6 +93,25 @@ body.ty {
   pointer-events: none;
 }
 
+/* Rings pulse gently outward from the centre, on a loop: soft and slow, two rings half a cycle apart */
+.ty-tick-pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(30, 123, 70, 0.35);
+  background: rgba(30, 123, 70, 0.06);
+  opacity: 0;
+  pointer-events: none;
+  animation: ty-pulse 3.2s cubic-bezier(0.25, 0.6, 0.3, 1) infinite;
+}
+
+.ty-tick-pulse--2 { animation-delay: 1.6s; }
+
+@keyframes ty-pulse {
+  0%   { transform: scale(1);   opacity: 0.7; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+
 .ty-tick-disc {
   position: relative;
   width: 52px;
@@ -698,5 +717,6 @@ body.ty {
 
 @media (prefers-reduced-motion: reduce) {
   .ty * { transition: none !important; scroll-behavior: auto !important; }
+  .ty-tick-pulse { animation: none; opacity: 0; } /* motion turned off: the tick stays still */
   html.ty-html { scroll-behavior: auto; }
 }
