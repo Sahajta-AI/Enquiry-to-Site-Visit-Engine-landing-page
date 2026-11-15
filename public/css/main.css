@@ -347,14 +347,28 @@ img, video {
 .sales-sound-btn[hidden],
 .video-panel-text[hidden] { display: none; }
 
-/* Captions readable on top of the picture */
-.sales-video::cue {
+/* Our own captions: always on, always at the very bottom of the picture */
+.vid-cap {
+  position: absolute;
+  left: 50%;
+  bottom: 3.5%;
+  transform: translateX(-50%);
+  z-index: 2;
+  max-width: 88%;
+  margin: 0;
+  padding: 0.2em 0.55em;
+  border-radius: 4px;
   background: rgba(0, 0, 0, 0.72);
   color: #fff;
-  font-family: var(--font-sans);
-  font-size: 1rem;
+  font-family: var(--font-sans, Inter, sans-serif);
+  font-size: clamp(0.8125rem, 1.6vw, 1.0625rem);
   line-height: 1.35;
+  text-align: center;
+  white-space: pre-line;
+  pointer-events: none;
+  opacity: 0;
 }
+.vid-cap.is-on { opacity: 1; }
 
 /* Big gold "Click for sound", centred over the video */
 .sales-sound-btn {
@@ -391,7 +405,6 @@ img, video {
 
 @media (max-width: 767px) {
   .sales-sound-btn { min-height: 50px; font-size: 1rem; padding: 0 1.25rem; }
-  .sales-video::cue { font-size: 0.875rem; }
 }
 
 .video-panel-text {

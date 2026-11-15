@@ -1014,9 +1014,25 @@ document.addEventListener('DOMContentLoaded', () => {
     let cfgUrl = '';
     const reached = {};
 
+    // Captions on from the start, drawn by us at the very bottom of the picture (the browser's own captions
+    // move up over the video whenever its control bar shows; Shubhang 15 Nov)
+    const capBox = document.getElementById('sales-cap');
+    let capWired = false;
     const showCaptions = () => {
       const t = salesVideo.textTracks && salesVideo.textTracks[0];
-      if (t) t.mode = 'showing';
+      if (!t || !capBox) return;
+      t.mode = 'hidden'; // loaded and timed, not drawn by the browser
+      if (capWired) return;
+      capWired = true;
+      const draw = () => {
+        const cues = t.activeCues;
+        let text = '';
+        for (let i = 0; cues && i < cues.length; i++) text += (text ? '\n' : '') + cues[i].text;
+        capBox.textContent = text;
+        capBox.classList.toggle('is-on', !!text);
+      };
+      t.addEventListener('cuechange', draw);
+      draw();
     };
 
     let wantSound = false;

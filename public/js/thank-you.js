@@ -158,6 +158,29 @@
   // ---------- Video (our own player, nothing downloads until play) ----------
   var videoReady = false;
 
+  function ownCaptions(video, box) {
+    if (!video || !box) return;
+    function wire() {
+      var t = video.textTracks && video.textTracks[0];
+      if (!t) return false;
+      t.mode = 'hidden'; // loaded and timed, but not drawn by the browser
+      function draw() {
+        var cues = t.activeCues, text = '';
+        for (var i = 0; cues && i < cues.length; i++) text += (text ? '\n' : '') + cues[i].text;
+        box.textContent = text;
+        box.classList.toggle('is-on', !!text);
+      }
+      t.addEventListener('cuechange', draw);
+      draw();
+      return true;
+    }
+    if (!wire()) {
+      if (video.textTracks && video.textTracks.addEventListener) video.textTracks.addEventListener('addtrack', wire);
+    }
+    // Some browsers reset the mode when the track loads: keep it ours
+    video.addEventListener('loadedmetadata', function () { var t = video.textTracks[0]; if (t && t.mode !== 'hidden') t.mode = 'hidden'; });
+  }
+
   function setupVideo() {
     if (videoReady) return;
     videoReady = true;
@@ -179,10 +202,15 @@
         cap.label = 'English';
         cap.srclang = 'en';
         cap.src = settings.briefingVideoCaptions;
+        cap.default = true;
         video.appendChild(cap);
       }
       video.load();
     }
+
+    // Captions on from the start, drawn by us at the very bottom of the picture (the browser's own captions
+    // jump up over the video's text whenever its control bar shows; Shubhang 15 Nov)
+    ownCaptions(video, $('ty-video-cap'));
 
     var watched = false;
     try { watched = sessionStorage.getItem('sv_watched') === '1'; } catch (e) {}
