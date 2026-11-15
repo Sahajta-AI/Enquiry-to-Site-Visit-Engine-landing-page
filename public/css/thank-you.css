@@ -469,7 +469,7 @@ body.ty {
 
 .ty-video-wrap.is-playing .ty-video-play { background: transparent; }
 .ty-video-wrap.is-playing .ty-video-badge { opacity: 0; }
-.ty-video-wrap.has-controls .ty-video-play { height: calc(100% - 56px); }
+.ty-video-wrap.has-controls .ty-video-play { display: none; }
 
 .ty-video-title {
   margin-top: 10px;

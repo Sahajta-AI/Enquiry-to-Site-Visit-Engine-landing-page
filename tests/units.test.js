@@ -211,7 +211,7 @@ test('briefing video: hosted file by default, env overrides it, "none" hides it'
   const keep = { u: process.env.BRIEFING_VIDEO_URL, p: process.env.BRIEFING_VIDEO_POSTER, c: process.env.BRIEFING_VIDEO_CAPTIONS };
   try {
     delete process.env.BRIEFING_VIDEO_URL; delete process.env.BRIEFING_VIDEO_POSTER; delete process.env.BRIEFING_VIDEO_CAPTIONS;
-    assert.deepStrictEqual(lcfg.briefingVideo(), { url: '/videos/briefing.mp4', poster: '/videos/briefing-poster.jpg', captions: '/videos/briefing.vtt' });
+    assert.deepStrictEqual(lcfg.briefingVideo(), { url: '/videos/briefing-540.mp4', poster: '/videos/briefing-poster.jpg', captions: '/videos/briefing.vtt' });
     process.env.BRIEFING_VIDEO_URL = 'https://cdn.example.test/v.mp4';
     assert.deepStrictEqual(lcfg.briefingVideo(), { url: 'https://cdn.example.test/v.mp4', poster: '', captions: '' });
     process.env.BRIEFING_VIDEO_URL = 'none';

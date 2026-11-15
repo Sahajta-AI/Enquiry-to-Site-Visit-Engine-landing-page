@@ -134,6 +134,10 @@
     var hwTitle = $('ty-hw-title').firstElementChild;
 
     show($('ty-video-step'), hasVideo);
+    if (!hasVideo) {
+      var v = $('ty-video');
+      if (v && v.getAttribute('src')) { v.removeAttribute('src'); v.load(); }
+    }
     show($('ty-watch'), hasVideo);
 
     if (hasVideo) {
@@ -162,32 +166,40 @@
     var video = $('ty-video');
     var playBtn = $('ty-video-play');
 
-    if (settings.briefingVideoPoster) video.setAttribute('poster', settings.briefingVideoPoster);
-    video.setAttribute('preload', 'none');
-    video.src = settings.briefingVideoUrl;
-    if (settings.briefingVideoCaptions) {
-      var track = document.createElement('track');
-      track.kind = 'captions';
-      track.label = 'English';
-      track.srclang = 'en';
-      track.src = settings.briefingVideoCaptions;
-      video.appendChild(track);
+    // The page already loads the hosted video (so it starts at once); a different file set in the settings replaces it
+    var url = settings.briefingVideoUrl;
+    if (url && video.getAttribute('src') !== url) {
+      video.setAttribute('src', url);
+      if (settings.briefingVideoPoster) video.setAttribute('poster', settings.briefingVideoPoster);
+      var oldCap = video.querySelector('track');
+      if (oldCap) oldCap.parentNode.removeChild(oldCap);
+      if (settings.briefingVideoCaptions) {
+        var cap = document.createElement('track');
+        cap.kind = 'captions';
+        cap.label = 'English';
+        cap.srclang = 'en';
+        cap.src = settings.briefingVideoCaptions;
+        video.appendChild(cap);
+      }
+      video.load();
     }
 
     var watched = false;
     try { watched = sessionStorage.getItem('sv_watched') === '1'; } catch (e) {}
     show($('ty-watched'), watched);
 
+    // Our gold button only starts the video. From then on the player's own controls take over and our layer is
+    // removed completely (a layer left over the picture drew a hard line across it, Shubhang 15 Nov)
     playBtn.addEventListener('click', function () {
       video.controls = true;
       wrap.classList.add('has-controls');
-      if (video.paused) video.play().catch(function () {});
-      else video.pause();
+      video.play().catch(function () {});
     });
 
     var started = false, sent90 = false;
     video.addEventListener('play', function () {
-      wrap.classList.add('is-playing');
+      wrap.classList.add('is-playing', 'has-controls');
+      video.controls = true;
       if (!started) { started = true; track('PreCallVideoStart'); }
     });
     video.addEventListener('pause', function () { wrap.classList.remove('is-playing'); });
@@ -205,6 +217,7 @@
       }
     });
   }
+
 
   // ---------- Go ----------
   renderTop();
