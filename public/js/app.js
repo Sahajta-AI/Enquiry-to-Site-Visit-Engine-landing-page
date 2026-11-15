@@ -1023,6 +1023,7 @@ document.addEventListener('DOMContentLoaded', () => {
       salesBtn.hidden = true;
       salesPanel.classList.add('has-sound');
       salesVideo.muted = false;
+      if (!salesVideo.src && cfgUrl) salesVideo.src = cfgUrl;
       salesVideo.currentTime = 0;
       salesVideo.controls = true;
       showCaptions();
@@ -1052,9 +1053,29 @@ document.addEventListener('DOMContentLoaded', () => {
       v.addEventListener('play', () => { if (!salesVideo.paused) salesVideo.pause(); });
     });
 
+    // Pause the muted autoplay while it is scrolled out of view (saves data), resume when it comes back
+    let inView = true;
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(entries => {
+        inView = entries[0].isIntersecting;
+        if (withSound || salesVideo.hidden || !salesVideo.src) return;
+        if (inView) salesVideo.play().catch(() => {}); else salesVideo.pause();
+      }, { threshold: 0.25 }).observe(salesPanel);
+    }
+
+    let cfgUrl = '';
     const setUp = (cfg) => {
       const url = cfg && cfg.salesVideoUrl;
+      cfgUrl = url || '';
       if (!url) return; // no video address yet: the placeholder stays
+      // Open the connection to the video host now, so the first seconds arrive without a wait
+      try {
+        const link = document.createElement('link');
+        link.rel = 'preconnect';
+        link.href = new URL(url, window.location.href).origin;
+        link.crossOrigin = '';
+        document.head.appendChild(link);
+      } catch (err) {}
       if (cfg.salesVideoPoster) salesVideo.poster = cfg.salesVideoPoster;
       if (cfg.salesVideoCaptions) {
         const cap = document.createElement('track');
@@ -1065,18 +1086,25 @@ document.addEventListener('DOMContentLoaded', () => {
         cap.default = true;
         salesVideo.appendChild(cap);
       }
-      salesVideo.preload = 'auto';
-      salesVideo.src = url;
+      // The poster shows at once; the video itself only starts downloading after the page has loaded,
+      // so the landing page's own speed is not affected (Shubhang, 15 Nov)
       salesVideo.hidden = false;
       const ph = document.getElementById('sales-placeholder');
       if (ph) ph.hidden = true;
       salesPanel.classList.add('has-video');
       salesBtn.hidden = false;
-      showCaptions();
-      salesVideo.addEventListener('loadedmetadata', showCaptions, { once: true });
-      // Muted autoplay; if the phone blocks it, the poster and the button stay (the button plays it with sound)
-      const tryPlay = salesVideo.play();
-      if (tryPlay && tryPlay.catch) tryPlay.catch(() => salesPanel.classList.add('autoplay-blocked'));
+      const start = () => {
+        salesVideo.preload = 'auto';
+        salesVideo.src = url;
+        showCaptions();
+        salesVideo.addEventListener('loadedmetadata', showCaptions, { once: true });
+        if (!inView) return;
+        // Muted autoplay; if the phone blocks it, the poster and the button stay (the button plays it with sound)
+        const tryPlay = salesVideo.play();
+        if (tryPlay && tryPlay.catch) tryPlay.catch(() => salesPanel.classList.add('autoplay-blocked'));
+      };
+      if (document.readyState === 'complete') start();
+      else window.addEventListener('load', start, { once: true });
     };
 
     const cfgPromise = window.SVTrack ? window.SVTrack.config() : fetch('/api/config').then(r => r.json());
