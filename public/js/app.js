@@ -1011,6 +1011,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const salesPanel = document.getElementById('sales-panel');
   if (salesVideo && salesBtn && salesPanel) {
     let withSound = false;
+    let cfgUrl = '';
     const reached = {};
 
     const showCaptions = () => {
@@ -1018,7 +1019,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (t) t.mode = 'showing';
     };
 
+    let wantSound = false;
     const startWithSound = () => {
+      if (!cfgUrl) { wantSound = true; return; } // the address is still on its way: start the moment it arrives
       withSound = true;
       salesBtn.hidden = true;
       salesPanel.classList.add('has-sound');
@@ -1063,11 +1066,18 @@ document.addEventListener('DOMContentLoaded', () => {
       }, { threshold: 0.25 }).observe(salesPanel);
     }
 
-    let cfgUrl = '';
     const setUp = (cfg) => {
       const url = cfg && cfg.salesVideoUrl;
       cfgUrl = url || '';
-      if (!url) return; // no video address yet: the placeholder stays
+      if (!url) {
+        // No video set: only then "Video coming soon" (the poster and button show from the first paint otherwise)
+        salesVideo.hidden = true;
+        salesBtn.hidden = true;
+        salesPanel.classList.remove('has-video');
+        const ph0 = document.getElementById('sales-placeholder');
+        if (ph0) ph0.hidden = false;
+        return;
+      }
       // Open the connection to the video host now, so the first seconds arrive without a wait
       try {
         const link = document.createElement('link');
@@ -1103,6 +1113,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tryPlay = salesVideo.play();
         if (tryPlay && tryPlay.catch) tryPlay.catch(() => salesPanel.classList.add('autoplay-blocked'));
       };
+      if (wantSound) { start(); startWithSound(); return; }
       if (document.readyState === 'complete') start();
       else window.addEventListener('load', start, { once: true });
     };
