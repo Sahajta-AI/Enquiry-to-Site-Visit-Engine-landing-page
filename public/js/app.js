@@ -119,11 +119,11 @@ document.addEventListener('DOMContentLoaded', () => {
     updateStickyButton();
   }
 
-  // Where the button is: hero, videos, wall, final or sticky
+  // Where the button is: hero, videos, final or sticky
   function buttonLocation(btn) {
     if (btn.closest('#sticky-cta')) return 'sticky';
     const sec = btn.closest('section');
-    const map = { hero: 'hero', testimonials: 'videos', wall: 'wall', final: 'final' };
+    const map = { hero: 'hero', testimonials: 'videos', final: 'final' };
     return (sec && map[sec.id]) || 'page';
   }
 
