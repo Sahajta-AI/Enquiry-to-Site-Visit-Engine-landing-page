@@ -64,7 +64,7 @@ test('booking email: subject and key lines are the brief\'s words', () => {
   assert.strictEqual(e.subject, 'Your Lead Conversion Clarity Call is scheduled for Wed 11 Nov, 4:05 pm IST');
   assert.match(e.text, /^Hi Asha, it’s Shubhang from Sahajta AI\. Thanks for booking your Lead Conversion Clarity Call\./);
   assert.match(e.text, /It’s scheduled for Wednesday, 11 November, at 4:05 pm IST \(45 minutes\), on Google Meet:\nhttps:\/\/meet\.google\.com\/abc-defg-hij/);
-  assert.match(e.text, /1\. Watch the 2-minute video: https:\/\/warmchain\.sahajta\.com\/thank-you/);
+  assert.match(e.text, /1\. Watch the short video: https:\/\/warmchain\.sahajta\.com\/thank-you/);
   assert.match(e.text, /If you need to move the time, please reschedule before the call here:\nhttps:\/\/cal\.com\/reschedule\/bk-1/);
   assert.match(e.text, /See you on Wednesday,\nShubhang$/);
   assert.ok(!/confirmed|strategy call|free call|consultation/i.test(e.text));
