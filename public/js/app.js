@@ -1035,6 +1035,40 @@ document.addEventListener('DOMContentLoaded', () => {
       draw();
     };
 
+    // The video's address: an MP4, or a streaming address ending in .m3u8 (Mux). A stream picks the quality
+    // that fits the viewer's internet, so it doesn't stall on a slow phone. iPhones and Safari play it on their own;
+    // other browsers get the small hls.js player, loaded only then. Our own player, captions and tracking stay.
+    let sourceReady = null; // a promise, once the address is attached
+    let attached = false;   // true once it is attached (so a tap can play at once)
+    const isStream = (u) => /\.m3u8(\?|$)/i.test(u);
+    const attachSource = (u) => {
+      // Built-in streaming only on Safari and iPhones (they do it well). Desktop Chrome says "maybe" but doesn't play it.
+      const safari = /^((?!chrome|chromium|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent);
+      const native = salesVideo.canPlayType('application/vnd.apple.mpegurl') && (safari || !window.MediaSource);
+      if (!isStream(u) || native) {
+        salesVideo.src = u;
+        return Promise.resolve();
+      }
+      return new Promise((resolve) => {
+        const go = () => {
+          const Hls = window.Hls;
+          if (!Hls || !Hls.isSupported()) { salesVideo.src = u; resolve(); return; } // last resort: try it directly
+          const hls = new Hls({ capLevelToPlayerSize: true });
+          hls.loadSource(u);
+          hls.attachMedia(salesVideo);
+          resolve();
+        };
+        if (window.Hls) { go(); return; }
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.light.min.js';
+        s.async = true;
+        s.onload = go;
+        s.onerror = go;
+        document.head.appendChild(s);
+      });
+    };
+    const ensureSource = () => sourceReady || (sourceReady = attachSource(cfgUrl).then(() => { attached = true; }));
+
     let wantSound = false;
     const startWithSound = () => {
       if (!cfgUrl) { wantSound = true; return; } // the address is still on its way: start the moment it arrives
@@ -1042,12 +1076,13 @@ document.addEventListener('DOMContentLoaded', () => {
       salesBtn.hidden = true;
       salesPanel.classList.add('has-sound');
       salesVideo.muted = false;
-      if (!salesVideo.src && cfgUrl) salesVideo.src = cfgUrl;
-      salesVideo.currentTime = 0;
       salesVideo.controls = true;
       showCaptions();
       track.event('ViewContent', { content_name: 'Sales video' }, false);
-      salesVideo.play().catch(() => {});
+      const playFromStart = () => { salesVideo.currentTime = 0; salesVideo.play().catch(() => {}); };
+      // Already attached: play now, inside the tap (iPhones need that). Otherwise as soon as it is attached.
+      if (attached) playFromStart();
+      else ensureSource().then(playFromStart);
     };
 
     salesBtn.addEventListener('click', startWithSound);
@@ -1077,7 +1112,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if ('IntersectionObserver' in window) {
       new IntersectionObserver(entries => {
         inView = entries[0].isIntersecting;
-        if (withSound || salesVideo.hidden || !salesVideo.src) return;
+        if (withSound || salesVideo.hidden || !sourceReady) return;
         if (inView) salesVideo.play().catch(() => {}); else salesVideo.pause();
       }, { threshold: 0.25 }).observe(salesPanel);
     }
@@ -1121,13 +1156,14 @@ document.addEventListener('DOMContentLoaded', () => {
       salesBtn.hidden = false;
       const start = () => {
         salesVideo.preload = 'auto';
-        salesVideo.src = url;
-        showCaptions();
         salesVideo.addEventListener('loadedmetadata', showCaptions, { once: true });
-        if (!inView) return;
-        // Muted autoplay; if the phone blocks it, the poster and the button stay (the button plays it with sound)
-        const tryPlay = salesVideo.play();
-        if (tryPlay && tryPlay.catch) tryPlay.catch(() => salesPanel.classList.add('autoplay-blocked'));
+        ensureSource().then(() => {
+          showCaptions();
+          if (!inView || withSound) return;
+          // Muted autoplay; if the phone blocks it, the poster and the button stay (the button plays it with sound)
+          const tryPlay = salesVideo.play();
+          if (tryPlay && tryPlay.catch) tryPlay.catch(() => salesPanel.classList.add('autoplay-blocked'));
+        });
       };
       if (wantSound) { start(); startWithSound(); return; }
       if (document.readyState === 'complete') start();
