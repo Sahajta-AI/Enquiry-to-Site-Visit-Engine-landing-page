@@ -1179,6 +1179,37 @@ document.addEventListener('DOMContentLoaded', () => {
     Promise.resolve(cfgPromise).then(setUp).catch(() => {});
   }
 
+  // ---------- Hero size: the whole hero, button box included, fits the first screen (no scroll) ----------
+  // The video takes the space that is left, up to 1000px wide; the button box gets the same width.
+  // Laptops and bigger only: on phones the video is the screen's width and the CSS handles it.
+  (function fitHero() {
+    const inner = document.querySelector('.hero-inner');
+    const panel = document.getElementById('sales-panel');
+    const box = document.getElementById('cta-hero');
+    if (!inner || !panel || !box) return;
+    const MAX = 1000, MIN = 440, BOTTOM = 16;
+    const fit = () => {
+      if (window.innerWidth < 768) { inner.style.removeProperty('--hero-w'); return; }
+      const room = Math.min(MAX, inner.clientWidth);
+      let w = room;
+      // Twice: the box's height depends on its width (its text can wrap)
+      for (let i = 0; i < 2; i++) {
+        inner.style.setProperty('--hero-w', w + 'px');
+        const top = panel.getBoundingClientRect().top + window.scrollY;
+        const gap = parseFloat(getComputedStyle(box).marginTop) || 0;
+        const height = window.innerHeight - top - gap - box.offsetHeight - BOTTOM;
+        w = Math.max(MIN, Math.min(room, Math.floor(height * 16 / 9)));
+      }
+      inner.style.setProperty('--hero-w', w + 'px');
+    };
+    let queued = false;
+    const later = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; fit(); }); };
+    fit();
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit); // the headline's font changes its height
+    window.addEventListener('resize', later);
+    window.addEventListener('load', fit, { once: true });
+  })();
+
   // Video carousel arrows
   const videoGrid = document.getElementById('video-grid');
   const videoPrev = document.getElementById('video-prev');
