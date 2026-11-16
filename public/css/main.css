@@ -265,7 +265,7 @@ img, video {
   align-items: center;
   /* One width for the video and the button box under it, so their edges line up (Shubhang, 16 Nov).
      Sized by the screen's height so the video is as big as it can be with the button still near the first screen. */
-  --hero-w: min(100%, 960px, max(560px, calc((100svh - 390px) * 16 / 9)));
+  --hero-w: min(100%, 1000px, max(600px, calc((100svh - 330px) * 16 / 9)));
 }
 
 .hero-pre {
@@ -375,7 +375,7 @@ img, video {
 }
 .vid-cap.is-on { opacity: 1; }
 
-/* Big gold "Click for sound", centred over the video */
+/* "Click for sound": a see-through gold block, centred over the video (Shubhang's reference, 16 Nov) */
 .sales-sound-btn {
   position: absolute;
   left: 50%;
@@ -384,31 +384,26 @@ img, video {
   z-index: 2;
   display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
-  min-height: 3em;
-  padding: 0 1.35em;
+  gap: 0.55em;
+  padding: 0.85em 1.5em;
   border: none;
-  border-radius: 999px;
-  background: var(--gold);
-  color: var(--ink);
+  border-radius: 3px;
+  background: rgba(217, 183, 91, 0.82); /* --gold, see-through */
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  color: #fff;
   font-family: var(--font-sans);
   font-size: 1rem;
-  font-size: clamp(0.8125rem, 2.2cqw, 1.125rem); /* scales with the video */
+  font-size: clamp(0.875rem, 2.6cqw, 1.375rem); /* scales with the video */
+  font-weight: 600;
   white-space: nowrap;
-  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   cursor: pointer;
-  box-shadow: 0 14px 34px -12px rgba(0, 0, 0, 0.55);
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
-  animation: soundPulse 2.4s ease-in-out infinite;
+  transition: background var(--transition-fast);
 }
 
-.sales-sound-btn:hover { transform: translate(-50%, -50%) scale(1.04); }
+.sales-sound-btn:hover { background: rgba(217, 183, 91, 0.95); }
 .sales-sound-btn:focus-visible { outline: 3px solid var(--cream); outline-offset: 3px; }
-
-@keyframes soundPulse {
-  0%, 100% { box-shadow: 0 14px 34px -12px rgba(0, 0, 0, 0.55), 0 0 0 0 rgba(212, 175, 55, 0.5); }
-  50%      { box-shadow: 0 14px 34px -12px rgba(0, 0, 0, 0.55), 0 0 0 12px rgba(212, 175, 55, 0); }
-}
 
 .sales-sound-btn svg { width: 1.2em; height: 1.2em; flex: none; }
 
@@ -425,7 +420,7 @@ img, video {
 .cta-box {
   width: var(--hero-w);
   margin-top: 1rem;
-  padding: 0.9rem 1.25rem 1rem;
+  padding: 0.9rem 1rem 1rem;
   border: 1px solid var(--line-strong);
   border-radius: 14px;
   background: #FFFFFF;
@@ -444,10 +439,10 @@ img, video {
 }
 .cta-actions .client-faces { margin-top: 0; }
 @media (min-width: 768px) {
-  .cta-actions { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 0.75rem 1.25rem; }
+  .cta-actions { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 0.75rem 1rem; }
   .cta-actions .client-faces { gap: 0.6rem; }
   .cta-actions .faces-row img { width: 36px; height: 36px; }
-  .cta-actions .client-faces p { font-size: 0.875rem; }
+  .cta-actions .client-faces p { font-size: clamp(0.8125rem, 1vw, 0.875rem); white-space: nowrap; }
 }
 
 .cta-box-question {
