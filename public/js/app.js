@@ -1016,24 +1016,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Captions on from the start, drawn by us at the very bottom of the picture (the browser's own captions
     // move up over the video whenever its control bar shows; Shubhang 15 Nov)
+    // We read the .vtt file ourselves instead of using a <track>: the streaming player (hls.js) wipes a track's
+    // captions, so this works the same for an MP4 or a Mux stream, in every browser.
     const capBox = document.getElementById('sales-cap');
-    let capWired = false;
-    const showCaptions = () => {
-      const t = salesVideo.textTracks && salesVideo.textTracks[0];
-      if (!t || !capBox) return;
-      t.mode = 'hidden'; // loaded and timed, not drawn by the browser
-      if (capWired) return;
-      capWired = true;
-      const draw = () => {
-        const cues = t.activeCues;
-        let text = '';
-        for (let i = 0; cues && i < cues.length; i++) text += (text ? '\n' : '') + cues[i].text;
-        capBox.textContent = text;
-        capBox.classList.toggle('is-on', !!text);
-      };
-      t.addEventListener('cuechange', draw);
-      draw();
+    let capCues = [];
+    const vttTime = (t) => t.split(':').reduce((sum, part) => sum * 60 + parseFloat(part), 0);
+    const loadCaptions = (url) => {
+      fetch(url).then(r => (r.ok ? r.text() : '')).then(vtt => {
+        capCues = vtt.replace(/\r/g, '').split(/\n\n+/).map(block => {
+          const lines = block.split('\n');
+          const at = lines.findIndex(l => l.includes('-->'));
+          if (at < 0) return null;
+          const [from, to] = lines[at].split('-->').map(x => vttTime(x.trim().split(/\s+/)[0]));
+          return { from, to, text: lines.slice(at + 1).join('\n').trim() };
+        }).filter(Boolean);
+        showCaptions();
+      }).catch(() => {});
     };
+    let capShown = '';
+    const showCaptions = () => {
+      if (!capBox) return;
+      const t = salesVideo.currentTime;
+      let text = '';
+      // Only the newest caption: two overlapping ones stacked up cover his face
+      for (let i = capCues.length - 1; i >= 0; i--) {
+        if (t >= capCues[i].from && t < capCues[i].to) { text = capCues[i].text; break; }
+      }
+      if (text === capShown) return;
+      capShown = text;
+      capBox.textContent = text;
+      capBox.classList.toggle('is-on', !!text);
+    };
+    salesVideo.addEventListener('timeupdate', showCaptions);
+    salesVideo.addEventListener('seeked', showCaptions);
 
     // The video's address: an MP4, or a streaming address ending in .m3u8 (Mux). A stream picks the quality
     // that fits the viewer's internet, so it doesn't stall on a slow phone. iPhones and Safari play it on their own;
@@ -1138,15 +1153,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.head.appendChild(link);
       } catch (err) {}
       if (cfg.salesVideoPoster) salesVideo.poster = cfg.salesVideoPoster;
-      if (cfg.salesVideoCaptions) {
-        const cap = document.createElement('track');
-        cap.kind = 'captions';
-        cap.label = 'English';
-        cap.srclang = 'en';
-        cap.src = cfg.salesVideoCaptions;
-        cap.default = true;
-        salesVideo.appendChild(cap);
-      }
+      if (cfg.salesVideoCaptions) loadCaptions(cfg.salesVideoCaptions);
       // The poster shows at once; the video itself only starts downloading after the page has loaded,
       // so the landing page's own speed is not affected (Shubhang, 15 Nov)
       salesVideo.hidden = false;
@@ -1156,9 +1163,7 @@ document.addEventListener('DOMContentLoaded', () => {
       salesBtn.hidden = false;
       const start = () => {
         salesVideo.preload = 'auto';
-        salesVideo.addEventListener('loadedmetadata', showCaptions, { once: true });
         ensureSource().then(() => {
-          showCaptions();
           if (!inView || withSound) return;
           // Muted autoplay; if the phone blocks it, the poster and the button stay (the button plays it with sound)
           const tryPlay = salesVideo.play();
