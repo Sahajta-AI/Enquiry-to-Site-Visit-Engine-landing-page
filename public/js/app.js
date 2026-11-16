@@ -1037,7 +1037,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // The video's address: an MP4, or a streaming address ending in .m3u8 (Mux). A stream picks the quality
     // that fits the viewer's internet, so it doesn't stall on a slow phone. iPhones and Safari play it on their own;
-    // other browsers get the small hls.js player, loaded only then. Our own player, captions and tracking stay.
+    // other browsers get the hls.js player (the full build: Mux sends the sound as a separate track, which the light build can't play), loaded only then. Our own player, captions and tracking stay.
     let sourceReady = null; // a promise, once the address is attached
     let attached = false;   // true once it is attached (so a tap can play at once)
     const isStream = (u) => /\.m3u8(\?|$)/i.test(u);
@@ -1060,7 +1060,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         if (window.Hls) { go(); return; }
         const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.light.min.js';
+        s.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.6.13/dist/hls.min.js';
         s.async = true;
         s.onload = go;
         s.onerror = go;
