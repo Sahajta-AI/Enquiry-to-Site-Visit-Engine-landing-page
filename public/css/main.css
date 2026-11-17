@@ -269,6 +269,16 @@ img, video {
   --hero-w: min(100%, 1000px, max(560px, calc((100svh - 400px) * 16 / 9)));
 }
 
+/* Laptops: the hero is zoomed as one piece (html.hero-zoomed, set in index.html), so it looks the same on every laptop.
+   Inside it the sizes are fixed at what the 1470x800 reference screen gives; screen-based units (vw, vh) would undo the zoom. */
+html.hero-zoomed .hero { zoom: var(--hero-zoom, 1); }
+html.hero-zoomed .hero-pre { font-size: 1.0625rem; }
+html.hero-zoomed .hero-title { font-size: 2.5rem; }
+html.hero-zoomed .hero-sub { font-size: 1.125rem; }
+html.hero-zoomed .cta-box-question { font-size: 1.4rem; }
+html.hero-zoomed .cta-actions .client-faces p { font-size: 0.875rem; }
+html.hero-zoomed .video-panel-text { font-size: 1.5rem; }
+
 .hero-pre {
   font-size: clamp(0.9375rem, 1.6vw, 1.0625rem);
   font-weight: 600;

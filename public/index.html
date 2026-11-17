@@ -24,7 +24,7 @@
 
   <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/syne-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/css/main.css?v=2.9.4">
+  <link rel="stylesheet" href="/css/main.css?v=2.9.5">
 
   <!-- A nudge email's link is /?r={code}. Keep the code in session memory and take it out of the address
        BEFORE the Meta Pixel (and Clarity, once added) load, so neither records it. -->
@@ -38,6 +38,23 @@
         if (/^[A-Za-z0-9_-]{16,64}$/.test(r)) sessionStorage.setItem('sv_resume', r);
         window.history.replaceState(null, '', u.pathname + (u.search || '') + u.hash);
       } catch (e) {}
+    })();
+  </script>
+
+  <!-- Hero zoom: the hero is laid out for a 1470x800 laptop screen (the boss's Mac) and zoomed as one piece to fit
+       this screen, so every laptop sees the same look. Set here, before the first paint; app.js (fitHero) re-runs it on resize. -->
+  <script>
+    (function () {
+      var REF_W = 1470, REF_H = 800;
+      window.heroZoom = function () {
+        var r = document.documentElement, w = window.innerWidth, h = window.innerHeight;
+        if (w < 1024) { r.classList.remove('hero-zoomed'); r.style.removeProperty('--hero-zoom'); return 1; }
+        var s = Math.max(0.55, Math.min(1.5, w / REF_W, h / REF_H));
+        r.classList.add('hero-zoomed');
+        r.style.setProperty('--hero-zoom', String(s));
+        return s;
+      };
+      window.heroZoom();
     })();
   </script>
 
@@ -446,6 +463,6 @@
   </div>
 
   <script src="/js/tracking.js?v=1.0.0" defer></script>
-  <script src="/js/app.js?v=2.7.8" defer></script>
+  <script src="/js/app.js?v=2.7.9" defer></script>
 </body>
 </html>

@@ -1179,25 +1179,33 @@ document.addEventListener('DOMContentLoaded', () => {
     Promise.resolve(cfgPromise).then(setUp).catch(() => {});
   }
 
-  // ---------- Hero size: the whole hero, button box included, fits the first screen (no scroll) ----------
-  // The video takes the space that is left, up to 1000px wide; the button box gets the same width.
-  // Laptops and bigger only: on phones the video is the screen's width and the CSS handles it.
+  // ---------- Hero size: the same look on every laptop ----------
+  // The hero is laid out once for the boss's Mac screen (REF_W x REF_H) and then zoomed as one piece to fit this
+  // screen, so the text, video and button box keep the same sizes next to each other on every laptop
+  // (an HP at 1920x1080 with Windows' 125% scaling showed a small video beside full-size text, 17 Nov).
+  // Inside that layout the video takes the height that is left, up to 1000px wide; the button box gets the same width.
+  // Phones and tablets (under 1024px wide) keep the normal layout; the CSS handles them.
   (function fitHero() {
+    const root = document.documentElement;
+    const hero = document.getElementById('hero');
     const inner = document.querySelector('.hero-inner');
     const panel = document.getElementById('sales-panel');
     const box = document.getElementById('cta-hero');
-    if (!inner || !panel || !box) return;
+    if (!hero || !inner || !panel || !box) return;
     const MAX = 1000, MIN = 440, BOTTOM = 16;
     const fit = () => {
+      const s = window.heroZoom ? window.heroZoom() : 1; // also set in the <head>, so the first paint is already right
       if (window.innerWidth < 768) { inner.style.removeProperty('--hero-w'); return; }
-      const room = Math.min(MAX, inner.clientWidth);
+      // Measured on screen (zoomed px) and turned back into the hero's own px by dividing by s
+      const cs = getComputedStyle(inner);
+      const room = Math.min(MAX, inner.getBoundingClientRect().width / s - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
       let w = room;
       // Twice: the box's height depends on its width (its text can wrap)
       for (let i = 0; i < 2; i++) {
         inner.style.setProperty('--hero-w', w + 'px');
         const top = panel.getBoundingClientRect().top + window.scrollY;
-        const gap = parseFloat(getComputedStyle(box).marginTop) || 0;
-        const height = window.innerHeight - top - gap - box.offsetHeight - BOTTOM;
+        const gap = (parseFloat(getComputedStyle(box).marginTop) || 0) * s;
+        const height = (window.innerHeight - top - gap - box.getBoundingClientRect().height) / s - BOTTOM;
         w = Math.max(MIN, Math.min(room, Math.floor(height * 16 / 9)));
       }
       inner.style.setProperty('--hero-w', w + 'px');
