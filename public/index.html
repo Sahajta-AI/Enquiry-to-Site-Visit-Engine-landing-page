@@ -48,7 +48,9 @@
       var REF_W = 1470, REF_H = 800;
       window.heroZoom = function () {
         var r = document.documentElement, w = window.innerWidth, h = window.innerHeight;
-        if (w < 1024) { r.classList.remove('hero-zoomed'); r.style.removeProperty('--hero-zoom'); return 1; }
+        // Phones/tablets, and the rare old browser without zoom (Firefox before mid-2024): normal layout, no zoom
+        var canZoom = window.CSS && CSS.supports && CSS.supports('zoom', '0.5');
+        if (w < 1024 || !canZoom) { r.classList.remove('hero-zoomed'); r.style.removeProperty('--hero-zoom'); return 1; }
         var s = Math.max(0.55, Math.min(1.5, w / REF_W, h / REF_H));
         r.classList.add('hero-zoomed');
         r.style.setProperty('--hero-zoom', String(s));
@@ -463,6 +465,6 @@
   </div>
 
   <script src="/js/tracking.js?v=1.0.0" defer></script>
-  <script src="/js/app.js?v=2.8.0" defer></script>
+  <script src="/js/app.js?v=2.8.1" defer></script>
 </body>
 </html>
