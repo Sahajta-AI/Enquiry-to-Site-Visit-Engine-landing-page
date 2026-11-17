@@ -1191,7 +1191,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const panel = document.getElementById('sales-panel');
     const box = document.getElementById('cta-hero');
     if (!hero || !inner || !panel || !box) return;
-    const MAX = 1000, MIN = 440, BOTTOM = 16;
+    const MAX = 1000, MIN = 440, BOTTOM = 6;
     const fit = () => {
       const s = window.heroZoom ? window.heroZoom() : 1; // also set in the <head>, so the first paint is already right
       if (window.innerWidth < 768) { inner.style.removeProperty('--hero-w'); return; }

@@ -278,6 +278,11 @@ html.hero-zoomed .hero-sub { font-size: 1.125rem; }
 html.hero-zoomed .cta-box-question { font-size: 1.4rem; }
 html.hero-zoomed .cta-actions .client-faces p { font-size: 0.875rem; }
 html.hero-zoomed .video-panel-text { font-size: 1.5rem; }
+/* Laptops: tighter gaps around the video and in the button box, so the video gets that space and is a bit bigger
+   (same layout, same text sizes; 17 Nov) */
+html.hero-zoomed .hero { padding-top: 0.5rem; }
+html.hero-zoomed .hero-sub { margin-bottom: 0.65rem; }
+html.hero-zoomed .cta-box { margin-top: 0.65rem; padding: 0.65rem 1rem 0.75rem; gap: 0.5rem; }
 
 .hero-pre {
   font-size: clamp(0.9375rem, 1.6vw, 1.0625rem);
