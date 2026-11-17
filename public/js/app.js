@@ -1186,7 +1186,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Inside that layout the video takes the height that is left, up to 1000px wide; the button box gets the same width.
   // Phones and tablets (under 1024px wide) keep the normal layout; the CSS handles them.
   (function fitHero() {
-    const root = document.documentElement;
     const hero = document.getElementById('hero');
     const inner = document.querySelector('.hero-inner');
     const panel = document.getElementById('sales-panel');
@@ -1196,18 +1195,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const fit = () => {
       const s = window.heroZoom ? window.heroZoom() : 1; // also set in the <head>, so the first paint is already right
       if (window.innerWidth < 768) { inner.style.removeProperty('--hero-w'); return; }
-      // Measured on screen (zoomed px) and turned back into the hero's own px by dividing by s
+      // Measured with the zoom switched off for a moment (and the hero given the width the zoom would give it):
+      // browsers don't agree on how they report sizes inside a zoomed box (Safari differs from Chrome), plain px they do
+      const heroTop = (hero.getBoundingClientRect().top + window.scrollY) / s; // what is above the hero, in hero px
+      hero.style.zoom = '1';
+      hero.style.width = (window.innerWidth / s) + 'px';
       const cs = getComputedStyle(inner);
-      const room = Math.min(MAX, inner.getBoundingClientRect().width / s - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
+      const room = Math.min(MAX, inner.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight));
       let w = room;
       // Twice: the box's height depends on its width (its text can wrap)
       for (let i = 0; i < 2; i++) {
         inner.style.setProperty('--hero-w', w + 'px');
-        const top = panel.getBoundingClientRect().top + window.scrollY;
-        const gap = (parseFloat(getComputedStyle(box).marginTop) || 0) * s;
-        const height = (window.innerHeight - top - gap - box.getBoundingClientRect().height) / s - BOTTOM;
+        const top = heroTop + panel.getBoundingClientRect().top - hero.getBoundingClientRect().top;
+        const gap = parseFloat(getComputedStyle(box).marginTop) || 0;
+        const height = window.innerHeight / s - top - gap - box.offsetHeight - BOTTOM;
         w = Math.max(MIN, Math.min(room, Math.floor(height * 16 / 9)));
       }
+      hero.style.removeProperty('zoom');
+      hero.style.removeProperty('width');
       inner.style.setProperty('--hero-w', w + 'px');
     };
     let queued = false;
