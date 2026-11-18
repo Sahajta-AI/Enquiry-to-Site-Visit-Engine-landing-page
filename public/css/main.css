@@ -91,6 +91,8 @@ body {
   flex-direction: column;
   background-color: var(--cream);
   overflow-x: hidden;
+  /* Syne draws numbers small and below the line by default, so "45-minute" looked like another font; use full-height numbers everywhere */
+  font-variant-numeric: lining-nums;
 }
 
 body.modal-open {
