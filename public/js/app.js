@@ -1182,6 +1182,7 @@ document.addEventListener('DOMContentLoaded', () => {
       barTimer = setTimeout(() => { if (!salesVideo.paused) salesPanel.classList.remove('bar-up'); }, 2800);
     };
     ['pointermove', 'pointerdown', 'touchstart'].forEach(ev => salesPanel.addEventListener(ev, barUp, { passive: true }));
+    salesBtn.addEventListener('click', () => setTimeout(barUp, 0)); // show the bar for a moment when the sound comes on
     salesVideo.addEventListener('pause', () => { if (withSound) { clearTimeout(barTimer); salesPanel.classList.add('bar-up'); } });
     salesVideo.addEventListener('play', barUp);
 

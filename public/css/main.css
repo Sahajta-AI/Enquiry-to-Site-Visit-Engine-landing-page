@@ -404,12 +404,11 @@ html.hero-zoomed .cta-box .btn-primary { min-width: 340px; min-height: 60px; fon
   .video-panel.has-video .sales-tap {
     display: block;
     position: absolute;
-    inset: 0 0 44px 0;
+    inset: 0;
     z-index: 1;
     -webkit-tap-highlight-color: transparent;
   }
-  /* Our bar is always there once the sound is on: the caption sits just above it */
-  .video-panel.has-sound .vid-cap,
+  /* While our bar shows the caption sits just above it; when the bar hides it goes back to the very bottom */
   .video-panel.bar-up .vid-cap { bottom: 46px; }
 }
 
@@ -430,6 +429,9 @@ html.hero-zoomed .cta-box .btn-primary { min-width: 340px; min-height: 60px; fon
   font-family: var(--font-sans);
 }
 .sales-bar[hidden] { display: none; }
+/* It hides a few seconds after the last tap while the video plays, and shows on a tap or while paused (app.js: bar-up) */
+.sales-bar { opacity: 0; pointer-events: none; transition: opacity 0.25s ease; }
+.video-panel.bar-up .sales-bar { opacity: 1; pointer-events: auto; }
 .sb-btn {
   flex: none;
   width: 40px;
