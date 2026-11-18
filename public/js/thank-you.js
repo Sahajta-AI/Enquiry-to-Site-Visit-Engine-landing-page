@@ -117,11 +117,36 @@
 
     wa.setAttribute('href', 'https://wa.me/' + number + '?text=' + encodeURIComponent(confirmMessage));
 
+    // A web page can't see whether the message was sent. So: "WhatsApp is open…" right after the tap, and once they
+    // come back to this page (or a phone reloads it on the way back), "Sent it? You're all set." (Shubhang, 18 Nov)
+    var OPEN_LINE = 'WhatsApp is open. Send the message there to confirm.';
+    var BACK_LINE = 'Sent it? You’re all set.';
+    var tapped = false, wentAway = false;
+    var remembered = false;
+    try { remembered = sessionStorage.getItem('sv_wa_tapped') === '1'; } catch (e) {}
+    if (remembered) { after.textContent = BACK_LINE; show(after, true); }
+
     wa.addEventListener('click', function () {
       track('ConfirmWhatsApp');
-      after.textContent = 'WhatsApp is open. Send the message there to confirm.';
+      tapped = true; wentAway = false;
+      try { sessionStorage.setItem('sv_wa_tapped', '1'); } catch (e) {}
+      after.textContent = OPEN_LINE;
       show(after, true);
     });
+
+    var cameBack = function () {
+      if (!tapped || !wentAway) return;
+      after.textContent = BACK_LINE;
+    };
+    document.addEventListener('visibilitychange', function () {
+      if (!tapped) return;
+      if (document.visibilityState === 'hidden') wentAway = true;
+      else cameBack();
+    });
+    // Laptops: WhatsApp Web opens in another tab or window; this one loses focus without being hidden
+    window.addEventListener('blur', function () { if (tapped) wentAway = true; });
+    window.addEventListener('focus', cameBack);
+    window.addEventListener('pageshow', function (e) { if (e.persisted && tapped) { wentAway = true; cameBack(); } });
   }
 
   // ---------- Part 9: new events (only fire when NEW_TRACKING is on; sv-core.js checks) ----------

@@ -268,3 +268,24 @@ test('the on-screen words in lib/qualify.js match the form exactly (every saved 
   pairs.forEach(([value, label]) => assert.strictEqual(qualify.SHOWN[value], label, value));
   [...qualify.Q1_VALUES, ...qualify.Q2_VALUES].forEach(v => assert.ok(qualify.SHOWN[v], 'label for ' + v));
 });
+
+test('nudge-link booking: each saved ad-source detail this visit lacks is reused, one by one; this visit\'s own details win', () => {
+  const prev = process.env.NEW_TRACKING;
+  process.env.NEW_TRACKING = 'on';
+  try {
+    const nudgeRec = { lead: { sv_attrib: { utm_source: 'facebook', utm_campaign: 'saved-campaign', fbclid: 'SAVED', landing_url: 'https://warmchain.sahajta.com/?fbclid=SAVED' }, fbp: 'fb.1.1.saved', fbc: 'fb.1.1.SAVED' } };
+    // this visit only has its own utm_campaign: the rest comes from the saved visit
+    const md = bookingmeta.buildBookingMetadata({
+      body: { sv_attrib: { utm_campaign: 'new-campaign' } }, req: { headers: {} }, nudgeRec, test: true, qualified: true, leadEventId: 'e1', scheduleId: 's1'
+    });
+    assert.strictEqual(md.utm_campaign, 'new-campaign', 'this visit wins');
+    assert.strictEqual(md.utm_source, 'facebook', 'reused from the saved visit');
+    assert.strictEqual(md.fbclid, 'SAVED');
+    assert.strictEqual(md.landing_url, 'https://warmchain.sahajta.com/?fbclid=SAVED');
+    assert.strictEqual(md.fbp, 'fb.1.1.saved');
+    assert.strictEqual(md.fbc, 'fb.1.1.SAVED');
+    assert.strictEqual(md.nudge, 'yes');
+  } finally {
+    if (prev === undefined) delete process.env.NEW_TRACKING; else process.env.NEW_TRACKING = prev;
+  }
+});

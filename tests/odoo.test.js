@@ -392,6 +392,26 @@ test('webhook: replies first, then the email, then Odoo; a failing booking email
   assert.strictEqual(notesOf(l.id).filter(x => x.startsWith('Call booked for')).length, 1);
 });
 
+test('5.3 a lead found by phone with no email gets the email: when reopening a lost lead, and from the booking webhook', async () => {
+  reset();
+  // a lost lead, phone only
+  leads.push({ id: ++seq, name: '[TEST] Old Co (Old)', phone: '+919876543210', email_from: false, active: false, stage_id: STAGES.New, lost_reason_id: 9, x_studio_lead_channel: 'meta_ads', priority: '1' });
+  const lost = leads[leads.length - 1];
+  const b = leadBody({ email: 'phone-lost@example.com' });
+  await sendLead(b);
+  assert.strictEqual(lost.active, true, 'reopened');
+  assert.strictEqual(lost.email_from, 'phone-lost@example.com', 'the email is added on reopen');
+
+  // an open lead, phone only, then a booking made straight in Cal.com (no form)
+  reset();
+  leads.push({ id: ++seq, name: '[TEST] Open Co (Open)', phone: '+919876543210', email_from: false, active: true, stage_id: STAGES.New, x_studio_lead_channel: 'meta_ads', priority: '1' });
+  const open = leads[leads.length - 1];
+  await hook('BOOKING_CREATED', 'bk-phone', 'phone-open@example.com', inDays(3, 10).toISOString());
+  await settle();
+  assert.strictEqual(open.email_from, 'phone-open@example.com', 'the email is added from the booking');
+  assert.strictEqual(open.stage_id, STAGES['Call Scheduled']);
+});
+
 test('5.4 a booking made in Cal.com with no lead: a new lead from the booking, stars 0 and "No form answers" without notes', async () => {
   reset();
   await hook('BOOKING_CREATED', 'bk-b', 'tester@example.com', inDays(2, 10).toISOString(), { responses: {}, metadata: { test: 'yes' } });
@@ -585,6 +605,22 @@ test('6.2 the cron job: a wrong or missing CRON_SECRET is refused; on a preview 
   assert.strictEqual((await off.json()).result, 'new-tracking-off');
   assert.strictEqual(metaCalls.length, 0);
   assert.ok((await store.get('odoo:lastrun')).at, 'a run that finds NEW_TRACKING off is a good run');
+});
+
+test('6.2 the "not run for 2 days" alert: a test run never counts as a good run, and the check works with NEW_TRACKING off', async () => {
+  reset();
+  const signals = require(path.join(tmp, 'lib', 'odoosignals.js'));
+  // a test run ("Check Odoo now") leaves no "good run" behind
+  await signals.run({ tests: true });
+  assert.strictEqual(await store.get('odoo:lastrun'), null, 'a test run is not a real run');
+  // production, NEW_TRACKING off, the last real run 3 days ago: one alert
+  process.env.VERCEL_ENV = 'production'; process.env.NEW_TRACKING = 'off';
+  await store.set('odoo:lastrun', { at: Date.now() - 3 * 86400000 });
+  await signals.checkHealth();
+  assert.strictEqual(sent.filter(e => e.subject === 'The Odoo signal job has not run for 2 days').length, 1);
+  // a real cron run (NEW_TRACKING off) counts again
+  await signals.run({ tests: false });
+  assert.ok(Date.now() - (await store.get('odoo:lastrun')).at < 5000);
 });
 
 test('6.2 production never sends "[TEST]" leads or test bookings to the live Pixel', async () => {
