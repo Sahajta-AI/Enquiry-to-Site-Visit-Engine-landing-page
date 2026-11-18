@@ -1094,6 +1094,10 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const ensureSource = () => sourceReady || (sourceReady = attachSource(cfgUrl).then(() => { attached = true; }));
 
+    // Phones and tablets (touch, no mouse) get our own control bar
+    const touch = window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+    const salesBar = document.getElementById('sales-bar');
+
     let wantSound = false;
     const startWithSound = () => {
       if (!cfgUrl) { wantSound = true; return; } // the address is still on its way: start the moment it arrives
@@ -1101,7 +1105,8 @@ document.addEventListener('DOMContentLoaded', () => {
       salesBtn.hidden = true;
       salesPanel.classList.add('has-sound');
       salesVideo.muted = false;
-      salesVideo.controls = true;
+      // Laptops: the browser's own control bar. Phones: ours (each phone's own bar is different; an iPhone's has no pause)
+      if (touch && salesBar) salesBar.hidden = false; else salesVideo.controls = true;
       showCaptions();
       track.event('ViewContent', { content_name: 'Sales video' }, false);
       const playFromStart = () => { salesVideo.currentTime = 0; salesVideo.play().catch(() => {}); };
@@ -1121,6 +1126,50 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!withSound) { startWithSound(); return; }
         if (salesVideo.paused) salesVideo.play().catch(() => {}); else salesVideo.pause();
       });
+    }
+
+    // Our phone control bar
+    if (salesBar) {
+      const playBtn = document.getElementById('sb-play');
+      const timeEl = document.getElementById('sb-time');
+      const trackEl = document.getElementById('sb-track');
+      const fillEl = document.getElementById('sb-fill');
+      const fullBtn = document.getElementById('sb-full');
+      const clock = (t) => { t = Math.max(0, Math.floor(t || 0)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
+      const drawBar = () => {
+        const d = isFinite(salesVideo.duration) ? salesVideo.duration : 0;
+        timeEl.textContent = clock(salesVideo.currentTime) + ' / ' + clock(d);
+        fillEl.style.width = (d ? (salesVideo.currentTime / d) * 100 : 0) + '%';
+      };
+      const drawPlay = () => {
+        salesBar.classList.toggle('is-paused', salesVideo.paused);
+        playBtn.setAttribute('aria-label', salesVideo.paused ? 'Play' : 'Pause');
+      };
+      ['timeupdate', 'durationchange', 'seeked', 'loadedmetadata'].forEach(ev => salesVideo.addEventListener(ev, drawBar));
+      ['play', 'pause', 'ended'].forEach(ev => salesVideo.addEventListener(ev, drawPlay));
+      playBtn.addEventListener('click', () => { if (salesVideo.paused) salesVideo.play().catch(() => {}); else salesVideo.pause(); });
+      // Seek: tap or drag along the bar
+      const seekTo = (x) => {
+        const r = trackEl.getBoundingClientRect();
+        const d = salesVideo.duration;
+        if (!isFinite(d) || !r.width) return;
+        salesVideo.currentTime = Math.min(1, Math.max(0, (x - r.left) / r.width)) * d;
+        drawBar();
+      };
+      let dragging = false;
+      trackEl.addEventListener('pointerdown', (e) => { dragging = true; trackEl.setPointerCapture && trackEl.setPointerCapture(e.pointerId); seekTo(e.clientX); });
+      trackEl.addEventListener('pointermove', (e) => { if (dragging) seekTo(e.clientX); });
+      ['pointerup', 'pointercancel'].forEach(ev => trackEl.addEventListener(ev, () => { dragging = false; }));
+      // Full screen: the phone's own full-screen player (iPhones only allow that one), with its own controls
+      fullBtn.addEventListener('click', () => {
+        if (salesVideo.webkitEnterFullscreen && !salesVideo.requestFullscreen) { salesVideo.webkitEnterFullscreen(); return; }
+        if (salesVideo.requestFullscreen) {
+          salesVideo.controls = true;
+          salesVideo.requestFullscreen().catch(() => { salesVideo.controls = false; if (salesVideo.webkitEnterFullscreen) salesVideo.webkitEnterFullscreen(); });
+        } else if (salesVideo.webkitEnterFullscreen) salesVideo.webkitEnterFullscreen();
+      });
+      document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && touch) salesVideo.controls = false; });
+      drawBar(); drawPlay();
     }
 
     // While the control bar shows (paused, or just after the mouse or a finger moved over the video),

@@ -404,11 +404,81 @@ html.hero-zoomed .cta-box .btn-primary { min-width: 340px; min-height: 60px; fon
   .video-panel.has-video .sales-tap {
     display: block;
     position: absolute;
-    inset: 0 0 64px 0;
+    inset: 0 0 44px 0;
     z-index: 1;
     -webkit-tap-highlight-color: transparent;
   }
-  .video-panel.bar-up .vid-cap { bottom: calc(2.5% + 64px); } /* a phone's control bar is taller */
+  /* Our bar is always there once the sound is on: the caption sits just above it */
+  .video-panel.has-sound .vid-cap,
+  .video-panel.bar-up .vid-cap { bottom: 46px; }
+}
+
+/* Phones: our own control bar (Shubhang, 18 Nov): play/pause, time, seek bar, full screen */
+.sales-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 4px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+  color: #fff;
+  font-family: var(--font-sans);
+}
+.sales-bar[hidden] { display: none; }
+.sb-btn {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #fff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.sb-btn svg { width: 24px; height: 24px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4)); }
+.sb-full svg { width: 20px; height: 20px; }
+.sb-play .sb-i-play { display: none; }
+.sales-bar.is-paused .sb-i-play { display: block; }
+.sales-bar.is-paused .sb-i-pause { display: none; }
+.sb-time { flex: none; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
+.sb-track {
+  flex: 1;
+  height: 28px; /* a big tap area around a thin line */
+  position: relative;
+  cursor: pointer;
+  touch-action: none;
+}
+.sb-track::before,
+.sb-fill {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 2px;
+}
+.sb-track::before { right: 0; background: rgba(255, 255, 255, 0.35); }
+.sb-fill { width: 0; background: #fff; }
+.sb-fill::after { /* the handle */
+  content: "";
+  position: absolute;
+  right: -6px;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: #fff;
 }
 
 /* "Click for sound": a see-through gold block, centred over the video (Shubhang's reference, 16 Nov) */
