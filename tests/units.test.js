@@ -244,7 +244,7 @@ test('sales video: no address plays the Mux stream, "none" hides it; poster and 
     delete process.env.SALES_VIDEO_URL;
     const v = lcfg.salesVideo();
     assert.match(v.url, /^https:\/\/stream\.mux\.com\/[A-Za-z0-9]+\.m3u8$/);
-    assert.strictEqual(v.poster, '/videos/sales-poster.webp');
+    assert.strictEqual(v.poster, '/videos/sales-poster-start.webp');
     assert.strictEqual(v.captions, '/videos/sales.vtt');
     process.env.SALES_VIDEO_URL = 'none';
     assert.strictEqual(lcfg.salesVideo().url, '');
