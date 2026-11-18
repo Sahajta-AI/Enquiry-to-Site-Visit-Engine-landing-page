@@ -11,9 +11,10 @@
 
   var settings = {
     whatsappNumber: '919731173205',
-    briefingVideoUrl: '',
-    briefingVideoPoster: '',
-    briefingVideoCaptions: '',
+    // Same as the video already in the page's HTML, so it shows and starts at once, and stays if /api/config fails
+    briefingVideoUrl: '/videos/briefing-540.mp4',
+    briefingVideoPoster: '/videos/briefing-poster.jpg',
+    briefingVideoCaptions: '/videos/briefing.vtt',
     demoWhatsappNumber: ''
   };
 
@@ -143,6 +144,7 @@
     if (hasVideo) {
       hwTitle.textContent = '2. Get these 3 numbers ready'; // with the video it is step 2
       setupVideo();
+      useVideoFile();
     } else {
       hwTitle.textContent = 'Get these 3 numbers ready';
     }
@@ -189,25 +191,6 @@
     var video = $('ty-video');
     var playBtn = $('ty-video-play');
 
-    // The page already loads the hosted video (so it starts at once); a different file set in the settings replaces it
-    var url = settings.briefingVideoUrl;
-    if (url && video.getAttribute('src') !== url) {
-      video.setAttribute('src', url);
-      if (settings.briefingVideoPoster) video.setAttribute('poster', settings.briefingVideoPoster);
-      var oldCap = video.querySelector('track');
-      if (oldCap) oldCap.parentNode.removeChild(oldCap);
-      if (settings.briefingVideoCaptions) {
-        var cap = document.createElement('track');
-        cap.kind = 'captions';
-        cap.label = 'English';
-        cap.srclang = 'en';
-        cap.src = settings.briefingVideoCaptions;
-        cap.default = true;
-        video.appendChild(cap);
-      }
-      video.load();
-    }
-
     // Captions on from the start, drawn by us at the very bottom of the picture (the browser's own captions
     // jump up over the video's text whenever its control bar shows; Shubhang 15 Nov)
     ownCaptions(video, $('ty-video-cap'));
@@ -246,11 +229,33 @@
     });
   }
 
+  // The page already loads the hosted video (so it starts at once) and it is kept as it is. Only a different file
+  // set in the settings replaces it (and it is never swapped once someone has pressed play).
+  function useVideoFile() {
+    var video = $('ty-video');
+    var url = settings.briefingVideoUrl;
+    if (!url || video.getAttribute('src') === url || !video.paused || video.currentTime > 0) return;
+    video.setAttribute('src', url);
+    if (settings.briefingVideoPoster) video.setAttribute('poster', settings.briefingVideoPoster);
+    else video.removeAttribute('poster');
+    var oldCap = video.querySelector('track');
+    if (oldCap) oldCap.parentNode.removeChild(oldCap);
+    if (settings.briefingVideoCaptions) {
+      var cap = document.createElement('track');
+      cap.kind = 'captions';
+      cap.label = 'English';
+      cap.srclang = 'en';
+      cap.src = settings.briefingVideoCaptions;
+      cap.default = true;
+      video.appendChild(cap);
+    }
+    video.load();
+  }
 
   // ---------- Go ----------
   renderTop();
   wireButtons();
-  applySettings(); // no video until the settings say so
+  applySettings(); // shows the hosted video at once; the settings below can only hide it or swap the file
 
   fetch('/api/config')
     .then(function (r) { return r.json(); })
