@@ -233,16 +233,22 @@ app.post('/api/cal-webhook', async (req, res) => {
   if (!lwebhook.verifySignature(req.rawBody || '', req.headers['x-cal-signature-256'], secret)) {
     return res.status(401).json({ ok: false });
   }
+  // Reply first, then the booking email, then Odoo. Each step is on its own: an email failure never skips Odoo,
+  // and an Odoo problem never touches the booking or its email.
+  let out;
   try {
-    const out = await lwebhook.handle(req.body);
-    res.status(out.status).json({ ok: true, result: out.result });
-    // Odoo, after the reply, on all three triggers: an Odoo problem never touches the booking or its email
-    lafter.after(() => lodooleads.onWebhook(req.body));
-    return;
+    out = await lwebhook.accept(req.body);
   } catch (err) {
-    console.error('❌ [/api/cal-webhook]:', err.message);
-    return res.status(500).json({ ok: false });
+    console.error('❌ [/api/cal-webhook record]:', err.message);
+    out = { status: 200, result: 'record-failed' }; // Odoo still gets the booking below
   }
+  res.status(out.status).json({ ok: true, result: out.result });
+  lafter.after(async () => {
+    if (out.uid) {
+      try { await lwebhook.sendFirst(out.uid); } catch (err) { console.error('❌ [/api/cal-webhook email]:', err.message); }
+    }
+    try { await lodooleads.onWebhook(req.body); } catch (err) { console.error('❌ [/api/cal-webhook Odoo]:', err.message); }
+  });
 });
 
 // The delayed job calls this when something is due (second email, nudges, retries, the 10-minute check)
@@ -385,7 +391,10 @@ app.get('/api/available-slots', async (req, res) => {
     }
   }
 
-  res.json({ date: dateStr, slots: [], slotsByDate: {}, availableDates: [] });
+  // Cal.com failed (or no key): say so, so the form shows "We couldn't load open times" with "Try again",
+  // never "No open times" (which also sent Shubhang a false "No times shown" email)
+  if (slotsFailed) res.status(503).json({ ok: false, error: 'slots-unavailable' });
+  else res.json({ date: dateStr, slots: [], slotsByDate: {}, availableDates: [] });
   if (slotsFailed) {
     // Open times failing to load means nobody can book: also by the backup alert path, at most one every 30 minutes
     lafter.after(() => lalerts.rateLimited('slots-fail', 30 * 60, 'Open times are not loading',

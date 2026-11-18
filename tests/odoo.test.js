@@ -125,6 +125,7 @@ function fakeOdoo(model, method, a) {
 
 // ---------------- the rest of the world ----------------
 const sent = [], metaCalls = [];
+let gmailDown = false;
 const calBookings = {}, calByEmail = {};
 global.fetch = async (url, opts) => {
   url = String(url); opts = opts || {};
@@ -149,6 +150,7 @@ global.fetch = async (url, opts) => {
   }
   if (url.startsWith('https://oauth2.googleapis.com/token')) return json({ access_token: 'tok', expires_in: 3600 });
   if (url.endsWith('/messages/send')) {
+    if (gmailDown) return json({ error: 'gmail down' }, 500);
     const mime = Buffer.from(JSON.parse(opts.body).raw, 'base64url').toString('utf8');
     const subj = (mime.match(/^Subject: (.*)$/mi) || [])[1] || '';
     const enc = subj.match(/^=\?UTF-8\?B\?(.+)\?=$/);
@@ -339,7 +341,8 @@ function hook(trigger, uid, email, startIso, extra) {
     metadata: { lead_event_id: 'lead-' + uid }, responses: { notes: { value: 'Company or project: Rao Estates\nWhatsApp: +91 98765 43210' } }
   }, extra || {});
   const raw = JSON.stringify({ triggerEvent: trigger, payload });
-  return post('/api/cal-webhook', raw, { 'x-cal-signature-256': crypto.createHmac('sha256', 'whsec').update(raw).digest('hex') });
+  return post('/api/cal-webhook', raw, { 'x-cal-signature-256': crypto.createHmac('sha256', 'whsec').update(raw).digest('hex') })
+    .then(async r => { await require(path.join(tmp, 'lib', 'after.js'))._idle(); return r; });
 }
 const inDays = (d, hour) => { const x = new Date(Date.now() + d * 86400000); x.setUTCHours(hour, 0, 0, 0); return x; };
 
@@ -371,6 +374,22 @@ test('5.4 the reminder day: the day before, or the call day itself at or after 8
   assert.strictEqual(ol.reminderDay(start, new Date('2026-11-11T14:20:00.000Z')), '2026-11-11'); // 19:50 IST
   assert.strictEqual(ol.reminderDay(start, new Date('2026-11-11T14:40:00.000Z')), '2026-11-12'); // 20:10 IST
   assert.strictEqual(ol.reminderDay(start, new Date('2026-11-12T03:00:00.000Z')), '2026-11-12'); // the call day
+});
+
+test('webhook: replies first, then the email, then Odoo; a failing booking email never skips Odoo', async () => {
+  reset();
+  const b = leadBody();
+  await sendLead(b);
+  const l = leads[0];
+  gmailDown = true;
+  try {
+    const r = await hook('BOOKING_CREATED', 'bk-mailfail', b.email, inDays(3, 10).toISOString());
+    assert.strictEqual(r.status, 200);
+    assert.deepStrictEqual(await r.json(), { ok: true, result: 'accepted' }, 'the reply comes before the email');
+    await settle();
+  } finally { gmailDown = false; }
+  assert.strictEqual(l.stage_id, STAGES['Call Scheduled'], 'Odoo was updated although the email failed');
+  assert.strictEqual(notesOf(l.id).filter(x => x.startsWith('Call booked for')).length, 1);
 });
 
 test('5.4 a booking made in Cal.com with no lead: a new lead from the booking, stars 0 and "No form answers" without notes', async () => {

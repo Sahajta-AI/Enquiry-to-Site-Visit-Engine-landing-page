@@ -110,7 +110,8 @@ global.fetch = async (url, opts) => {
 const app = require(path.join(tmp, 'server.js'));
 const store = require(path.join(tmp, 'lib', 'store.js'));
 require(path.join(tmp, 'lib', 'leads.js'))._setRecordWaitMs(5);
-require(path.join(tmp, 'lib', 'tasks.js'))._setScheduleRetryMs(5);
+const tasks = require(path.join(tmp, 'lib', 'tasks.js'));
+tasks._setScheduleRetryMs(5);
 let server, base;
 test.before(async () => {
   await new Promise(r => { server = app.listen(0, r); });
@@ -133,7 +134,9 @@ function webhookBody(over) {
   });
 }
 const sign = (raw, secret) => crypto.createHmac('sha256', secret || 'whsec').update(raw).digest('hex');
-const sendWebhook = (raw, secret) => post('/api/cal-webhook', raw, { 'x-cal-signature-256': sign(raw, secret) });
+// The webhook replies first and does its work after the reply: wait for that work
+const lafter = require(path.join(tmp, 'lib', 'after.js'));
+const sendWebhook = async (raw, secret) => { const r = await post('/api/cal-webhook', raw, { 'x-cal-signature-256': sign(raw, secret) }); await lafter._idle(); return r; };
 
 function qstashSig(raw) {
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -427,6 +430,28 @@ test('8.3: the daily limit stops new pairs and alerts once', async () => {
   assert.ok(leaveEmails.slice(2).every(e => e.text.endsWith('No nudge emails for them: WhatsApp them yourself.')));
 });
 
+test('8.3: nudge 1 went but nudge 2 could not be queued: the retry never sends nudge 1 again, it only queues nudge 2', async () => {
+  reset();
+  const b = lead({ email: 'twice@example.com', name: 'Tara Iyer' });
+  await post('/api/lead', b);
+  await post('/api/lead-signal', { kind: 'didnt_book', lead_event_id: b.lead_event_id });
+  // the queue goes down the moment nudge 1's job starts: nudge 1 is sent, queuing nudge 2 fails
+  const job = published.find(p => !p.ran);
+  job.ran = true;
+  publishDown = true;
+  const raw = JSON.stringify({ jobId: job.jobId });
+  await post('/api/jobs/run', raw, { 'upstash-signature': qstashSig(raw) });
+  publishDown = false;
+  const nudges = () => sent.filter(e => e.to === 'twice@example.com' && /One step left/.test(e.subject));
+  assert.strictEqual(nudges().length, 1, 'nudge 1 went');
+  const code = nudges()[0].text.match(/\?r=([A-Za-z0-9_-]{22})/)[1];
+  // the retry
+  const before = published.length;
+  assert.strictEqual(await tasks.runTask('nudge1', code, 2), 'sent');
+  assert.strictEqual(nudges().length, 1, 'still one nudge 1');
+  assert.strictEqual(published.length, before + 1, 'nudge 2 is queued now');
+});
+
 test('8.3: a failing nudge is tried 3 times, then Shubhang is alerted with the brief\'s words', async () => {
   reset();
   const b = lead({ email: 'fail@example.com', name: 'Fay Roy' });
@@ -693,12 +718,19 @@ test('4 /api/config: the Sandbox Pixel on a preview, never the booking link, nev
 test('7.4 open times failing to load: one alert per 30 minutes, also by the backup path', async () => {
   reset();
   slotsMode = 'fail';
-  await realFetch(base + '/api/available-slots?month=2026-11&timeZone=Asia/Kolkata');
+  const r1 = await realFetch(base + '/api/available-slots?month=2026-11&timeZone=Asia/Kolkata');
+  // a failure, not "no open times": the form then shows "We couldn't load open times" and "Try again"
+  assert.strictEqual(r1.status, 503);
+  assert.deepStrictEqual(await r1.json(), { ok: false, error: 'slots-unavailable' });
   await realFetch(base + '/api/available-slots?month=2026-11&timeZone=Asia/Kolkata');
   assert.ok(await waitFor(() => sent.some(e => e.subject === 'Open times are not loading')));
   await new Promise(r => setTimeout(r, 150));
   assert.strictEqual(sent.filter(e => e.subject === 'Open times are not loading').length, 1);
   assert.ok(alertsSent.some(a => a.subject === 'Open times are not loading'), 'the backup alert path too');
+  // Cal.com working with no free times is still a normal, empty answer
+  slotsMode = 'ok';
+  const r2 = await realFetch(base + '/api/available-slots?month=2026-11&timeZone=Asia/Kolkata');
+  assert.strictEqual(r2.status, 200);
 });
 
 test('4 Origin: the live address, the boss\'s address and preview addresses are allowed; other sites are not', async () => {
