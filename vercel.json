@@ -11,6 +11,12 @@
   ],
   "redirects": [
     {
+      "source": "/((?!api/).*)",
+      "has": [{ "type": "host", "value": "site-visit-engine-landing-page.vercel.app" }],
+      "destination": "https://warmchain.sahajta.com/$1",
+      "permanent": true
+    },
+    {
       "source": "/fit-and-book",
       "destination": "/",
       "permanent": false
