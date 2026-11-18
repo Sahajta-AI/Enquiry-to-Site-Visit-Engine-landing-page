@@ -124,7 +124,7 @@
     });
   }
 
-  // ---------- Part 9: new events (only fire when NEW_TRACKING is on; tracking.js checks) ----------
+  // ---------- Part 9: new events (only fire when NEW_TRACKING is on; sv-core.js checks) ----------
   function track(name, params) {
     try { if (window.SVTrack) window.SVTrack.newEvent(name, params || {}); } catch (e) {}
   }

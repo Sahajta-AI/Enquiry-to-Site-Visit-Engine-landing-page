@@ -92,7 +92,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Events that must fire once, even after Back or closing and reopening the panel
   const firedOnce = {};
 
-  // Tracking goes through /js/tracking.js: one Pixel, and a helper that does nothing when the Pixel isn't loaded
+  // Tracking goes through /js/sv-core.js (a neutral name, so ad blockers don't block it): one Pixel, and a helper that does nothing when the Pixel isn't loaded
   const track = {
     standard: (name, params, eventId) => { if (window.SVTrack) window.SVTrack.standard(name, params, eventId); },
     // The new events (Backend and Tracking Brief, 5.4) go live only when NEW_TRACKING is on
@@ -220,12 +220,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  // Indian number: keep only digits; drop a leading 91 or 0 when more than 10 are left; keep the first 10
+  // Indian number: keep only digits; while more than 10 are left, drop a leading 0 or 91
+  // ("+91 98765 43210", "091…", "0091…" all give 9876543210); keep the first 10.
+  // No maxlength on the field: it cut a pasted "+91 98765 43210" before this could clean it.
   function cleanIndianDigits(raw) {
     let digits = String(raw).replace(/\D/g, '');
-    if (digits.length > 10 && (digits.startsWith('91') || digits.startsWith('0'))) {
-      digits = digits.startsWith('91') ? digits.slice(2) : digits.slice(1);
-    }
+    while (digits.length > 10 && digits.startsWith('0')) digits = digits.slice(1);
+    if (digits.length > 10 && digits.startsWith('91')) digits = digits.slice(2);
     return digits.slice(0, 10);
   }
 
@@ -347,8 +348,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // POST /api/lead with the details. Nothing waits for it. The browser's Lead fires only after an ok reply,
   // and on no reply or an error it tries again in the background (up to twice), with the same ID.
+  // Where the visitor came from, even when an ad blocker stopped sv-core.js (same storage key and shape)
+  function attributionNow() {
+    if (window.SVTrack) return window.SVTrack.attribution();
+    try {
+      const o = JSON.parse(window.localStorage.getItem('sv_attrib') || 'null');
+      if (o && o.exp > Date.now() && o.data) return o.data;
+    } catch (e) { /* storage blocked */ }
+    return {};
+  }
+
+  // The lead record never depends on sv-core.js: only the Meta Pixel does
   async function sendLeadRecord(attempt) {
-    if (!window.SVTrack) return;
     const body = {
       lead_event_id: wizardState.lead_event_id,
       name: wizardState.name,
@@ -359,7 +370,7 @@ document.addEventListener('DOMContentLoaded', () => {
       q2_urgency: wizardState.q2_urgency,
       timezone: wizardState.timezone,
       page_url: window.location.href.split('#')[0],
-      sv_attrib: window.SVTrack.attribution(),
+      sv_attrib: attributionNow(),
       fbp: readCookie('_fbp'),
       fbc: readCookie('_fbc'),
       hp_note: trapInput ? trapInput.value : '',
@@ -771,7 +782,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const common = {
       schedule_event_id: wizardState.schedule_event_id,
       page_url: window.location.href.split('#')[0],
-      sv_attrib: window.SVTrack ? window.SVTrack.attribution() : {},
+      sv_attrib: attributionNow(),
       fbp: readCookie('_fbp'),
       fbc: readCookie('_fbc')
     };

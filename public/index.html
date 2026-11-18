@@ -62,7 +62,7 @@
     })();
   </script>
 
-  <!-- The Meta Pixel and Clarity load from /js/tracking.js once /api/config replies: the ID comes from the server, never from this page -->
+  <!-- The Meta Pixel and Clarity load from /js/sv-core.js once /api/config replies: the ID comes from the server, never from this page -->
 </head>
 <body>
 
@@ -440,7 +440,7 @@
               <label class="form-label" for="field-whatsapp">WhatsApp number</label>
               <div class="phone-row" id="phone-india">
                 <span class="phone-prefix" aria-hidden="true">+91</span>
-                <input type="tel" id="field-whatsapp" class="form-input phone-input" inputmode="numeric" autocomplete="tel-national" maxlength="14" enterkeyhint="done">
+                <input type="tel" id="field-whatsapp" class="form-input phone-input" inputmode="numeric" autocomplete="tel-national" enterkeyhint="done">
               </div>
               <input type="tel" id="field-whatsapp-intl" class="form-input" inputmode="tel" autocomplete="tel" placeholder="+971 50 123 4567" hidden enterkeyhint="done">
               <span class="error-msg" id="err-whatsapp">Please enter a 10-digit mobile number.</span>
@@ -479,7 +479,7 @@
     </div>
   </div>
 
-  <script src="/js/tracking.js?v=1.0.0" defer></script>
-  <script src="/js/app.js?v=2.8.7" defer></script>
+  <script src="/js/sv-core.js?v=1.0.1" defer></script>
+  <script src="/js/app.js?v=2.8.8" defer></script>
 </body>
 </html>

@@ -29,6 +29,7 @@ const realFetch = global.fetch;
 const sent = [];           // emails Gmail "sent"
 const alertsSent = [];     // Resend backup alerts
 const published = [];      // QStash publishes
+let publishDown = false;   // the queue refuses new jobs
 const calBookingPosts = [];
 const metaCalls = [];      // events sent to Meta
 let calMode = 'ok';        // 'ok' | 'refuse' | 'timeout'
@@ -95,6 +96,7 @@ global.fetch = async (url, opts) => {
     return json({ data: { uid: 'bk-resume-' + calBookingPosts.length, id: 9, videoCallUrl: 'https://meet.google.com/x' } });
   }
   if (url.includes('/v2/publish/')) {
+    if (publishDown) return json({ error: 'queue down' }, 500);
     published.push({ url, jobId: JSON.parse(opts.body).jobId, notBefore: Number(opts.headers['Upstash-Not-Before']), ran: false });
     return json({ messageId: 'q' + published.length });
   }
@@ -108,6 +110,7 @@ global.fetch = async (url, opts) => {
 const app = require(path.join(tmp, 'server.js'));
 const store = require(path.join(tmp, 'lib', 'store.js'));
 require(path.join(tmp, 'lib', 'leads.js'))._setRecordWaitMs(5);
+require(path.join(tmp, 'lib', 'tasks.js'))._setScheduleRetryMs(5);
 let server, base;
 test.before(async () => {
   await new Promise(r => { server = app.listen(0, r); });
@@ -154,7 +157,7 @@ async function runQueue(until) {
     results.push((await r.json()).result);
   }
 }
-const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calStart)) delete calStart[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; };
+const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calStart)) delete calStart[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; publishDown = false; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; };
 
 test('8.1: a booking sends the first email at once; the same webhook twice sends one; a wrong secret sends none', async () => {
   reset();
@@ -223,6 +226,17 @@ test('8.2: a second email due at night is held until 8 am in the lead\'s zone', 
   try { await sendWebhook(webhookBody({ uid: 'bk-night' })); } finally { Date.now = realNow; }
   const secondJob = published.find(p => p.notBefore * 1000 === new Date('2026-11-12T02:30:00.000Z').getTime());
   assert.ok(secondJob, 'second email is due at 8:00 am IST the next day');
+});
+
+test('8.2: the queue fails after the booking email went: Shubhang is alerted to send the second email by hand', async () => {
+  reset();
+  publishDown = true; // the queue refuses new jobs, so the 5-hour email can't be queued
+  await sendWebhook(webhookBody({ uid: 'bk-noqueue' }));
+  publishDown = false;
+  assert.strictEqual(sent.filter(e => e.to === 'asha@example.com').length, 1, 'the booking email went');
+  const a = alertsSent.filter(x => /Second email not scheduled/.test(x.subject));
+  assert.strictEqual(a.length, 1, 'one alert');
+  assert.match(a[0].text, /^Second email not scheduled: Asha Rao, Wed 11 Nov at 4:05 pm\. .*Send it by hand around .* IST, as a reply under the first\.$/);
 });
 
 test('8.1: a failing Gmail is tried 3 times, then Shubhang is alerted both ways, and no second email goes', async () => {
