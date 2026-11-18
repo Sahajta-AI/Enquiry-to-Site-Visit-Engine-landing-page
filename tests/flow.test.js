@@ -35,6 +35,7 @@ let calMode = 'ok';        // 'ok' | 'refuse' | 'timeout'
 let slotsMode = 'ok';      // 'ok' | 'fail'
 const threads = {};        // threadId -> message ids
 const calStatus = {};      // uid -> status
+const calStart = {};       // uid -> start time, when it differs from the webhook's
 const calByEmail = {};     // email -> [{createdAt,start,status}]
 let gmailFailures = 0;
 let n = 0;
@@ -71,7 +72,7 @@ global.fetch = async (url, opts) => {
   }
   if (/api\.cal\.com\/v2\/bookings\/[^?]+$/.test(url) && (opts.method || 'GET') === 'GET') {
     const uid = decodeURIComponent(url.split('/').pop());
-    return json({ data: { status: calStatus[uid] || 'accepted', meetingUrl: 'https://meet.google.com/live-link' } });
+    return json({ data: { status: calStatus[uid] || 'accepted', start: calStart[uid] || '2026-11-11T10:35:00.000Z', meetingUrl: 'https://meet.google.com/live-link' } });
   }
   if (url.startsWith('https://api.cal.com/v2/bookings?')) {
     const email = decodeURIComponent(url.match(/attendeeEmail=([^&]+)/)[1]);
@@ -154,7 +155,7 @@ async function runQueue(until) {
     results.push((await r.json()).result);
   }
 }
-const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; };
+const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calStart)) delete calStart[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; };
 
 test('8.1: a booking sends the first email at once; the same webhook twice sends one; a wrong secret sends none', async () => {
   reset();
@@ -204,10 +205,11 @@ test('8.2: the second email goes under the first, in the same thread, with Re:',
 });
 
 test('8.2: no second email when the booking was cancelled or moved, or someone replied in the thread', async () => {
-  for (const scenario of ['cancelled', 'replied']) {
+  for (const scenario of ['cancelled', 'time-changed', 'replied']) {
     reset();
     await sendWebhook(webhookBody({ uid: 'bk-' + scenario }));
     if (scenario === 'cancelled') calStatus['bk-cancelled'] = 'cancelled';
+    else if (scenario === 'time-changed') calStart['bk-time-changed'] = '2026-11-12T10:35:00.000Z'; // still booked, but at another time
     else threads[sent[0].threadId].push('lead-reply');
     await runQueue();
     assert.strictEqual(sent.length, 1, scenario + ': only the first email went');
