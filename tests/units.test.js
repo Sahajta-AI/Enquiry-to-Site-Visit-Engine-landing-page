@@ -223,12 +223,17 @@ test('briefing video: hosted file by default, env overrides it, "none" hides it'
   }
 });
 
-test('sales video: no address means the placeholder; poster and captions ship with the site', () => {
+test('sales video: no address plays the Mux stream, "none" hides it; poster and captions ship with the site', () => {
   const lcfg = require(require('path').join(__dirname, '..', 'lib', 'config'));
   const keep = process.env.SALES_VIDEO_URL;
   try {
     delete process.env.SALES_VIDEO_URL;
-    assert.deepStrictEqual(lcfg.salesVideo(), { url: '', poster: '/videos/sales-poster.webp', captions: '/videos/sales.vtt' });
+    const v = lcfg.salesVideo();
+    assert.match(v.url, /^https:\/\/stream\.mux\.com\/[A-Za-z0-9]+\.m3u8$/);
+    assert.strictEqual(v.poster, '/videos/sales-poster.webp');
+    assert.strictEqual(v.captions, '/videos/sales.vtt');
+    process.env.SALES_VIDEO_URL = 'none';
+    assert.strictEqual(lcfg.salesVideo().url, '');
     process.env.SALES_VIDEO_URL = 'https://video.example.test/sales.mp4';
     assert.strictEqual(lcfg.salesVideo().url, 'https://video.example.test/sales.mp4');
   } finally { if (keep === undefined) delete process.env.SALES_VIDEO_URL; else process.env.SALES_VIDEO_URL = keep; }
