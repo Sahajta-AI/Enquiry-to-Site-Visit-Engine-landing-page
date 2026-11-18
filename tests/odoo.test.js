@@ -33,8 +33,8 @@ const json = (o, status) => new Response(JSON.stringify(o), { status: status || 
 const STAGES = { New: 1, Replied: 2, 'Call Scheduled': 3, Qualified: 4, 'Proposal Sent': 5, 'Deal Closed': 6 };
 const stageName = (id) => Object.keys(STAGES).find(k => STAGES[k] === id);
 const ON_STAGE = { 1: ['WhatsApp follow-up', 1], 2: ['Get the call booked', 2], 3: ['Personal message the evening before the call', 0], 4: ['Send the proposal', 1], 5: ['Follow up on the proposal', 2], 6: ['Kickoff: WhatsApp group + kickoff call', 1] };
-let leads, acts, notes, odooCalls, odooDown, seq, utmCampaigns;
-function resetOdoo() { leads = []; acts = []; notes = []; odooCalls = []; odooDown = false; seq = 100; utmCampaigns = []; }
+let leads, acts, notes, odooCalls, odooDown, seq, utmCampaigns, slowOnce;
+function resetOdoo() { leads = []; acts = []; notes = []; odooCalls = []; odooDown = false; seq = 100; utmCampaigns = []; slowOnce = []; }
 resetOdoo();
 const isoDay = (offset) => new Date(Date.now() + 5.5 * 3600000 + offset * 86400000).toISOString().slice(0, 10);
 function addActs(lead, why) {
@@ -68,7 +68,8 @@ function fakeOdoo(model, method, a) {
   if (model === 'mail.activity.type') return [{ id: 2 }];
   if (model === 'utm.campaign') {
     if (method === 'create') { const c = Object.assign({ id: ++seq }, a.vals_list[0]); utmCampaigns.push(c); return [c.id]; }
-    const c = utmCampaigns.find(x => x.title === a.domain[0][2]); return c ? [{ id: c.id }] : [];
+    const t = a.domain.find(d => d[0] === 'title');
+    const c = utmCampaigns.find(x => x.title === t[2]); return c ? [{ id: c.id }] : [];
   }
   if (model === 'crm.lead') {
     if (method === 'fields_get') {
@@ -82,7 +83,7 @@ function fakeOdoo(model, method, a) {
     }
     if (method === 'create') {
       const v = a.vals_list[0];
-      const l = Object.assign({ id: ++seq, active: true, priority: '0', write_date: new Date().toISOString(), date_last_stage_update: new Date().toISOString().slice(0, 19).replace('T', ' ') }, v);
+      const l = Object.assign({ id: ++seq, active: true, priority: '0', create_date: new Date().toISOString().slice(0, 19).replace('T', ' '), write_date: new Date().toISOString(), date_last_stage_update: new Date().toISOString().slice(0, 19).replace('T', ' ') }, v);
       leads.push(l); addActs(l, 'stage'); return [l.id];
     }
     if (method === 'write') {
@@ -99,14 +100,20 @@ function fakeOdoo(model, method, a) {
       });
       return true;
     }
-    if (method === 'message_post') { notes.push({ id: a.ids[0], body: a.body, html: a.body_is_html, type: a.message_type, subtype: a.subtype_xmlid }); return 1; }
+    if (method === 'message_post') { notes.push({ mid: ++seq, id: a.ids[0], body: a.body, html: a.body_is_html, type: a.message_type, subtype: a.subtype_xmlid }); return 1; }
     if (method === 'activity_schedule') {
       acts.push({ id: ++seq, res_model: 'crm.lead', res_id: a.ids[0], summary: a.summary, date_deadline: a.date_deadline, done: false, typeId: a.activity_type_id, user: a.user_id });
       return true;
     }
   }
+  if (model === 'mail.message' && method === 'search_read') {
+    const want = Object.fromEntries(a.domain.map(d => [d[0], d[2]]));
+    return notes.filter(n => want.model === 'crm.lead' && n.id === want.res_id).map(n => ({ id: n.mid, body: '<p>' + n.body + '</p>' }));
+  }
   if (model === 'mail.activity') {
     if (method === 'search_read') {
+      const ids = a.domain.find(d => d[0] === 'id');
+      if (ids) return acts.filter(x => !x.done && ids[2].includes(x.id)).map(x => ({ id: x.id }));
       const want = Object.fromEntries(a.domain.map(d => [d[0], d[2]]));
       return acts.filter(x => !x.done && x.res_model === want.res_model && x.res_id === want.res_id && x.summary === want.summary).map(x => ({ id: x.id }));
     }
@@ -127,7 +134,18 @@ global.fetch = async (url, opts) => {
     assert.strictEqual(opts.headers['X-Odoo-Database'], 'db1');
     if (odooDown) return json({ message: 'down' }, 500);
     const [model, method] = url.replace('https://odoo.example.test/json/2/', '').split('/');
-    try { return json(fakeOdoo(model, method, JSON.parse(opts.body))); } catch (e) { return json({ message: e.message }, 400); }
+    let out;
+    try { out = fakeOdoo(model, method, JSON.parse(opts.body)); } catch (e) { return json({ message: e.message }, 400); }
+    // Saved in Odoo, but the reply comes too late: the website's call times out
+    const slow = slowOnce.findIndex(x => x === model + '/' + method);
+    if (slow >= 0) {
+      slowOnce.splice(slow, 1);
+      await new Promise((resolve, reject) => {
+        const t = setTimeout(resolve, 300);
+        if (opts.signal) opts.signal.addEventListener('abort', () => { clearTimeout(t); reject(opts.signal.reason); });
+      });
+    }
+    return json(out);
   }
   if (url.startsWith('https://oauth2.googleapis.com/token')) return json({ access_token: 'tok', expires_in: 3600 });
   if (url.endsWith('/messages/send')) {
@@ -582,6 +600,61 @@ test('11 test page: QualifiedAfterCall and Purchase go to the Sandbox from the s
   assert.strictEqual(metaCalls[1].event.custom_data.currency, 'INR');
   assert.ok(metaCalls.every(c => c.url.includes('/555000111/events') && c.event.action_source === 'system_generated'));
   assert.ok(!JSON.stringify(metaCalls).includes('test-lead@example.com'.toUpperCase()));
+});
+
+test('4 a timeout after Odoo saved: the retry checks first, so one lead, one note, one reminder (no copies)', async () => {
+  reset();
+  odoo._setTimeoutMs(100);
+  try {
+    slowOnce = ['crm.lead/create', 'crm.lead/message_post'];
+    const b = leadBody();
+    assert.strictEqual((await sendLead(b)).status, 200);
+    await settle();
+    assert.strictEqual(leadOf(b.email).length, 1, 'one lead');
+    const id = leadOf(b.email)[0].id;
+    assert.strictEqual(notes.filter(n => n.id === id).length, 1, 'one details note');
+    assert.strictEqual(odooCalls.filter(c => c.model === 'crm.lead' && c.method === 'create').length, 1, 'create sent once');
+
+    slowOnce = ['crm.lead/message_post', 'crm.lead/activity_schedule'];
+    await hook('BOOKING_CREATED', 'bk-slow', b.email, inDays(2, 10).toISOString());
+    await settle(); await sleep(400);
+    assert.strictEqual(notes.filter(n => n.id === id && /Call booked/.test(n.body)).length, 1, 'one "Call booked" note');
+    assert.strictEqual(acts.filter(x => x.res_id === id && x.summary === 'Personal message the evening before the call' && !x.done).length, 1, 'one evening reminder');
+  } finally {
+    odoo._setTimeoutMs(8000);
+  }
+});
+
+test('4 a timeout where Odoo did NOT save: the retry sends it again (one lead)', async () => {
+  reset();
+  odoo._setTimeoutMs(100);
+  const realCreate = fakeOdoo;
+  let dropped = false;
+  try {
+    // The first create is lost on the way (nothing saved, no reply)
+    const orig = global.fetch;
+    global.fetch = async (url, opts) => {
+      if (!dropped && String(url).endsWith('/json/2/crm.lead/create')) {
+        dropped = true;
+        odooCalls.push({ model: 'crm.lead', method: 'create', a: JSON.parse(opts.body) });
+        return new Promise((resolve, reject) => opts.signal.addEventListener('abort', () => reject(opts.signal.reason)));
+      }
+      return orig(url, opts);
+    };
+    try {
+      const b = leadBody();
+      assert.strictEqual((await sendLead(b)).status, 200);
+      await settle(); await sleep(300);
+      assert.strictEqual(leadOf(b.email).length, 1, 'the retry made the lead');
+    } finally { global.fetch = orig; }
+  } finally {
+    odoo._setTimeoutMs(8000);
+  }
+  assert.ok(realCreate);
+});
+
+test('4 note check compares words, not HTML', () => {
+  assert.strictEqual(odoo.plainText('<p>Call booked for <b>Mon</b>&nbsp;10 am<br>x &amp; y</p>'), odoo.plainText('Call booked for Mon 10 am<br>x &amp; y'));
 });
 
 test('4 the Odoo calls use JSON-2, named arguments, and nothing is ever deleted', async () => {
