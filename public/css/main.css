@@ -1813,6 +1813,33 @@ video::-webkit-media-controls-overlay-play-button {
   }
 }
 
+/* Phones shorter than 760px: the "Your details" step fits one screen, "See open times" included.
+   Taller phones (and laptops) keep the roomier spacing above. */
+@media (max-width: 600px) and (max-height: 760px) {
+  #wizard-step-3 .wizard-question-title { font-size: 1.3rem; margin-bottom: 1rem; }
+  #wizard-step-3 .details-line { margin: -0.5rem 0 0.9rem; }
+  #wizard-step-3 .form-group { margin-bottom: 0.7rem; }
+  #wizard-step-3 .form-label { margin-bottom: 0.25rem; }
+  #wizard-step-3 .form-input { height: 44px; }
+  #wizard-step-3 .phone-row .form-input { height: 41px; }
+  #wizard-step-3 .link-btn { min-height: 36px; margin-top: 0; }
+  #wizard-step-3 .wizard-footer { margin-top: 0.75rem; }
+  #wizard-step-3 .btn-primary { min-height: 48px; padding-top: 0.7rem; padding-bottom: 0.7rem; }
+}
+
+/* Very short phones (iPhone SE and similar) */
+@media (max-width: 600px) and (max-height: 620px) {
+  #wizard-step-3 .wizard-question-title { font-size: 1.15rem; margin-bottom: 0.5rem; }
+  #wizard-step-3 .details-line { font-size: 0.875rem; margin: -0.25rem 0 0.5rem; }
+  #wizard-step-3 .form-group { margin-bottom: 0.25rem; }
+  #wizard-step-3 .form-label { font-size: 0.875rem; margin-bottom: 0.15rem; }
+  #wizard-step-3 .form-input { height: 40px; }
+  #wizard-step-3 .phone-row .form-input { height: 37px; }
+  #wizard-step-3 .link-btn { min-height: 30px; }
+  #wizard-step-3 .wizard-footer { margin-top: 0.35rem; }
+  #wizard-step-3 .btn-primary { min-height: 44px; padding-top: 0.6rem; padding-bottom: 0.6rem; }
+}
+
 @media (max-width: 380px) {
   .time-slots-grid {
     grid-template-columns: repeat(2, 1fr);
