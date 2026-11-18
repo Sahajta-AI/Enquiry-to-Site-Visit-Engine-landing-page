@@ -23,7 +23,7 @@
   <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/syne-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/main.css?v=2.10.2">
-  <link rel="stylesheet" href="/css/thank-you.css?v=1.0.5">
+  <link rel="stylesheet" href="/css/thank-you.css?v=1.0.6">
 
   <!-- The Meta Pixel loads from /js/sv-core.js once /api/config replies (PageView only; Schedule fires in the booking form, never here) -->
 </head>
@@ -94,6 +94,19 @@
           <div class="ty-video">
             <div class="ty-video-wrap" id="ty-video-wrap">
               <video id="ty-video" preload="auto" playsinline src="/videos/briefing-540.mp4" poster="/videos/briefing-poster.jpg" aria-label="Before your Lead Conversion Clarity Call"><track kind="captions" label="English" srclang="en" src="/videos/briefing.vtt" default></video>
+              <!-- Phones: a tap on the picture pauses and plays, and our own small control bar (the same as the sales video's) -->
+              <div class="ty-tap" id="ty-tap" aria-hidden="true"></div>
+              <div class="sales-bar" id="ty-bar" hidden>
+                <button type="button" class="sb-btn sb-play" id="ty-sb-play" aria-label="Pause">
+                  <svg class="sb-i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" fill="currentColor"/></svg>
+                  <svg class="sb-i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z" fill="currentColor"/></svg>
+                </button>
+                <span class="sb-time" id="ty-sb-time">0:00 / 0:00</span>
+                <div class="sb-track" id="ty-sb-track"><div class="sb-fill" id="ty-sb-fill"></div></div>
+                <button type="button" class="sb-btn sb-full" id="ty-sb-full" aria-label="Full screen">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
               <p class="vid-cap" id="ty-video-cap" aria-hidden="true"></p>
               <button type="button" class="ty-video-play" id="ty-video-play" aria-label="Play: Before your Lead Conversion Clarity Call">
                 <span class="ty-video-badge"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>
@@ -190,6 +203,6 @@
   </footer>
 
   <script src="/js/sv-core.js?v=1.0.1" defer></script>
-  <script src="/js/thank-you.js?v=1.0.8" defer></script>
+  <script src="/js/thank-you.js?v=1.0.9" defer></script>
 </body>
 </html>

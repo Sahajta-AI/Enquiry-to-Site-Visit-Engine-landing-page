@@ -471,6 +471,20 @@ body.ty {
 .ty-video-wrap.is-playing .ty-video-badge { opacity: 0; }
 .ty-video-wrap.has-controls .ty-video-play { display: none; }
 
+/* Phones: a see-through layer takes taps on the picture (pause / play) and our control bar sits on top of it */
+.ty-tap { display: none; }
+@media (hover: none) and (pointer: coarse) {
+  .ty-video-wrap.has-bar .ty-tap {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .ty-video-wrap.bar-up .vid-cap { bottom: 46px; }
+}
+.ty-video-wrap.bar-up .sales-bar { opacity: 1; pointer-events: auto; }
+
 .ty-video-title {
   margin-top: 10px;
   text-align: center;

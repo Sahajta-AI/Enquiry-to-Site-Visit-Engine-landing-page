@@ -237,9 +237,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   const validators = {
-    name: () => nameInput.value.trim().length > 0,
-    company: () => companyInput.value.trim().length > 0,
-    email: () => emailRegex.test(emailInput.value.trim()),
+    // The same limits as the server (lib/leads.js validateDetails): name 2 to 80, company 1 to 100, email up to 200
+    name: () => { const n = nameInput.value.trim().length; return n >= 2 && n <= 80; },
+    company: () => { const n = companyInput.value.trim().length; return n >= 1 && n <= 100; },
+    email: () => { const v = emailInput.value.trim(); return emailRegex.test(v) && v.length <= 200; },
     whatsapp: () => {
       if (phoneIsInternational) {
         const v = phoneIntlInput.value.trim();
@@ -1224,7 +1225,9 @@ document.addEventListener('DOMContentLoaded', () => {
       new IntersectionObserver(entries => {
         inView = entries[0].isIntersecting;
         if (withSound || salesVideo.hidden || !sourceReady) return;
-        if (inView) salesVideo.play().catch(() => {}); else salesVideo.pause();
+        // Never resume over a client video that is playing
+        const clientPlaying = [...document.querySelectorAll('.video-wrapper video')].some(v => !v.paused && !v.ended);
+        if (inView && !clientPlaying) salesVideo.play().catch(() => {}); else if (!inView) salesVideo.pause();
       }, { threshold: 0.25 }).observe(salesPanel);
     }
 

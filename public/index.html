@@ -417,13 +417,13 @@
             <div class="form-row">
             <div class="form-group">
               <label class="form-label" for="field-name">Full name</label>
-              <input type="text" id="field-name" class="form-input" required autocomplete="name" enterkeyhint="next">
-              <span class="error-msg" id="err-name">Please enter your full name.</span>
+              <input type="text" id="field-name" class="form-input" required maxlength="80" autocomplete="name" enterkeyhint="next">
+              <span class="error-msg" id="err-name">Please enter your full name (at least 2 letters).</span>
             </div>
 
             <div class="form-group">
               <label class="form-label" for="field-company">Company or project name</label>
-              <input type="text" id="field-company" class="form-input" required autocomplete="organization" enterkeyhint="next">
+              <input type="text" id="field-company" class="form-input" required maxlength="100" autocomplete="organization" enterkeyhint="next">
               <span class="error-msg" id="err-company">Please enter your company or project name.</span>
             </div>
 
@@ -432,7 +432,7 @@
             <div class="form-row">
             <div class="form-group">
               <label class="form-label" for="field-email">Work email</label>
-              <input type="email" id="field-email" class="form-input" required autocomplete="email" enterkeyhint="next">
+              <input type="email" id="field-email" class="form-input" required maxlength="200" autocomplete="email" enterkeyhint="next">
               <span class="error-msg" id="err-email">Please enter an email address like name@company.com.</span>
             </div>
 
@@ -480,6 +480,6 @@
   </div>
 
   <script src="/js/sv-core.js?v=1.0.1" defer></script>
-  <script src="/js/app.js?v=2.8.8" defer></script>
+  <script src="/js/app.js?v=2.8.9" defer></script>
 </body>
 </html>

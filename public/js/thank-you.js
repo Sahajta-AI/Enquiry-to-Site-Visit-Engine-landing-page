@@ -183,6 +183,61 @@
     video.addEventListener('loadedmetadata', function () { var t = video.textTracks[0]; if (t && t.mode !== 'hidden') t.mode = 'hidden'; });
   }
 
+  // Phones: our control bar (play/pause, time, seek, full screen). It hides 3 seconds after the last tap while
+  // playing, shows on a tap, and stays while paused; a tap on the picture pauses and plays.
+  function setupBar(wrap, video, bar) {
+    var playBtn = $('ty-sb-play'), timeEl = $('ty-sb-time'), trackEl = $('ty-sb-track'), fillEl = $('ty-sb-fill'), fullBtn = $('ty-sb-full');
+    var tap = $('ty-tap');
+    var toggle = function () { if (video.paused) video.play().catch(function () {}); else video.pause(); };
+    var clock = function (t) { t = Math.max(0, Math.floor(t || 0)); var s2 = t % 60; return Math.floor(t / 60) + ':' + (s2 < 10 ? '0' : '') + s2; };
+    var drawBar = function () {
+      var d = isFinite(video.duration) ? video.duration : 0;
+      timeEl.textContent = clock(video.currentTime) + ' / ' + clock(d);
+      fillEl.style.width = (d ? (video.currentTime / d) * 100 : 0) + '%';
+    };
+    var drawPlay = function () {
+      bar.classList.toggle('is-paused', video.paused);
+      playBtn.setAttribute('aria-label', video.paused ? 'Play' : 'Pause');
+    };
+    ['timeupdate', 'durationchange', 'seeked', 'loadedmetadata'].forEach(function (ev) { video.addEventListener(ev, drawBar); });
+    ['play', 'pause', 'ended'].forEach(function (ev) { video.addEventListener(ev, drawPlay); });
+    playBtn.addEventListener('click', toggle);
+    if (tap) tap.addEventListener('click', toggle);
+
+    var seekTo = function (x) {
+      var r = trackEl.getBoundingClientRect(), d = video.duration;
+      if (!isFinite(d) || !r.width) return;
+      video.currentTime = Math.min(1, Math.max(0, (x - r.left) / r.width)) * d;
+      drawBar();
+    };
+    var dragging = false;
+    trackEl.addEventListener('pointerdown', function (e) { dragging = true; if (trackEl.setPointerCapture) trackEl.setPointerCapture(e.pointerId); seekTo(e.clientX); });
+    trackEl.addEventListener('pointermove', function (e) { if (dragging) seekTo(e.clientX); });
+    ['pointerup', 'pointercancel'].forEach(function (ev) { trackEl.addEventListener(ev, function () { dragging = false; }); });
+
+    // Full screen: the phone's own full-screen player (iPhones only allow that one), with its own controls
+    fullBtn.addEventListener('click', function () {
+      if (video.webkitEnterFullscreen && !video.requestFullscreen) { video.webkitEnterFullscreen(); return; }
+      if (video.requestFullscreen) {
+        video.controls = true;
+        video.requestFullscreen().catch(function () { video.controls = false; if (video.webkitEnterFullscreen) video.webkitEnterFullscreen(); });
+      } else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
+    });
+    document.addEventListener('fullscreenchange', function () { if (!document.fullscreenElement) video.controls = false; });
+
+    var barTimer = 0;
+    var barUp = function () {
+      if (bar.hidden) return;
+      wrap.classList.add('bar-up');
+      clearTimeout(barTimer);
+      barTimer = setTimeout(function () { if (!video.paused) wrap.classList.remove('bar-up'); }, 3000);
+    };
+    ['pointerdown', 'touchstart'].forEach(function (ev) { wrap.addEventListener(ev, barUp, { passive: true }); });
+    video.addEventListener('play', function () { setTimeout(barUp, 0); });
+    video.addEventListener('pause', function () { clearTimeout(barTimer); wrap.classList.add('bar-up'); });
+    drawBar(); drawPlay();
+  }
+
   function setupVideo() {
     if (videoReady) return;
     videoReady = true;
@@ -199,20 +254,32 @@
     try { watched = sessionStorage.getItem('sv_watched') === '1'; } catch (e) {}
     show($('ty-watched'), watched);
 
-    // Our gold button only starts the video. From then on the player's own controls take over and our layer is
+    // Phones and tablets (touch, no mouse) get our own control bar and tap-to-pause, the same as the sales video
+    // (an iPhone's own inline player has no pause). Laptops keep the browser's own controls.
+    var touch = !!(window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches);
+    var bar = $('ty-bar');
+    var useBar = touch && !!bar;
+    var showControls = function () {
+      wrap.classList.add('has-controls');
+      if (useBar) { bar.hidden = false; wrap.classList.add('has-bar'); }
+      else video.controls = true;
+    };
+
+    // Our gold button only starts the video. From then on the controls take over and our layer is
     // removed completely (a layer left over the picture drew a hard line across it, Shubhang 15 Nov)
     playBtn.addEventListener('click', function () {
-      video.controls = true;
-      wrap.classList.add('has-controls');
+      showControls();
       video.play().catch(function () {});
     });
 
     var started = false, sent90 = false;
     video.addEventListener('play', function () {
-      wrap.classList.add('is-playing', 'has-controls');
-      video.controls = true;
+      wrap.classList.add('is-playing');
+      showControls();
       if (!started) { started = true; track('PreCallVideoStart'); }
     });
+
+    if (useBar) setupBar(wrap, video, bar);
     video.addEventListener('pause', function () { wrap.classList.remove('is-playing'); });
     video.addEventListener('ended', function () { wrap.classList.remove('is-playing'); });
 
