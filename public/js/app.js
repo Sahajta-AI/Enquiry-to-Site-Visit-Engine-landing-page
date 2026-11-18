@@ -1129,6 +1129,9 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     salesBtn.addEventListener('click', startWithSound);
+    // The play button on the poster when the phone blocked autoplay: the same as "Click for sound" (plays with sound)
+    const playBadge = document.getElementById('sales-play-badge');
+    if (playBadge) playBadge.addEventListener('click', startWithSound);
 
     // Phones: the video's own controls take every tap on the picture, so a tap never paused it.
     // An invisible layer over the picture (the bottom strip stays free for the control bar) takes the tap instead:

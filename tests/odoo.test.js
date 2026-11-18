@@ -412,6 +412,22 @@ test('5.3 a lead found by phone with no email gets the email: when reopening a l
   assert.strictEqual(open.stage_id, STAGES['Call Scheduled']);
 });
 
+test('5.4 a lost lead brought back by a booking from a Meta ad: Lead Channel becomes Meta Ads and its reminders are set', async () => {
+  reset();
+  leads.push({ id: ++seq, name: '[TEST] Lost Co (Lost)', email_from: 'lost-meta@example.com', phone: '+919876543210', active: false, stage_id: STAGES.New,
+    lost_reason_id: 9, x_studio_lead_channel: false, priority: '1' });
+  const l = leads[leads.length - 1];
+  await hook('BOOKING_CREATED', 'bk-lost-meta', 'lost-meta@example.com', inDays(3, 10).toISOString(),
+    { metadata: { lead_event_id: 'lead-bk-lost-meta', utm_source: 'facebook', fbclid: 'abc', test: 'yes' } });
+  await settle();
+  assert.strictEqual(l.active, true, 'reopened');
+  assert.strictEqual(l.x_studio_lead_channel, 'meta_ads');
+  assert.strictEqual(l.stage_id, STAGES['Call Scheduled']);
+  const evening = actsOf(l.id, 'Personal message the evening before the call').filter(a => !a.done);
+  assert.strictEqual(evening.length, 1, 'one evening reminder');
+  assert.strictEqual(evening[0].date_deadline, isoDay(2), 'dated the evening before the call (the Meta Ads reminder step ran)');
+});
+
 test('5.4 a booking made in Cal.com with no lead: a new lead from the booking, stars 0 and "No form answers" without notes', async () => {
   reset();
   await hook('BOOKING_CREATED', 'bk-b', 'tester@example.com', inDays(2, 10).toISOString(), { responses: {}, metadata: { test: 'yes' } });
@@ -558,6 +574,22 @@ test('6 Check Odoo now (tests): Qualified sends QualifiedAfterCall once to the S
   assert.strictEqual(p.event_id, 'lead-xyz-won');
   assert.deepStrictEqual(p.custom_data, { value: 1, currency: 'INR', content_name: 'Enquiry-to-Site-Visit Engine' });
   assert.ok(notesOf(l.id).includes('Sent to Meta: Purchase ₹1'));
+});
+
+test('6 a Meta lead with no email: Cal.com is never searched with a blank email, and nobody else\'s booking goes to Meta', async () => {
+  reset();
+  process.env.NEW_TRACKING = 'on';
+  // a qualified Meta lead with a phone but no email, and no kept booking
+  leads.push({ id: ++seq, name: '[TEST] Phone Only (Phone)', phone: '+919876543210', email_from: false, active: true, stage_id: STAGES.Qualified,
+    x_studio_lead_channel: 'meta_ads', date_last_stage_update: new Date().toISOString().slice(0, 19).replace('T', ' ') });
+  // what a blank search would wrongly return: someone else's booking
+  calByEmail[''] = [{ uid: 'other', status: 'accepted', metadata: { lead_event_id: 'someone-else', test: 'yes' }, attendees: [{ name: 'Other Person', email: 'other@example.com' }] }];
+  const calls = [];
+  const orig = global.fetch;
+  global.fetch = (url, opts) => { if (String(url).startsWith('https://api.cal.com/v2/bookings?')) calls.push(String(url)); return orig(url, opts); };
+  try { await run(true); } finally { global.fetch = orig; }
+  assert.strictEqual(calls.filter(u => /attendeeEmail=(&|$)/.test(u)).length, 0, 'no blank search');
+  assert.strictEqual(metaCalls.length, 0, 'nothing sent to Meta');
 });
 
 test('6 a lead without Lead Channel Meta Ads, or without a booking carrying lead_event_id, sends nothing', async () => {

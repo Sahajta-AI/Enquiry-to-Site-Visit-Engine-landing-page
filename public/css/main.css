@@ -513,6 +513,30 @@ html.hero-zoomed .cta-box .btn-primary { min-width: 340px; min-height: 60px; fon
 }
 
 .sales-sound-btn:hover { background: rgba(217, 183, 91, 0.95); }
+
+/* Autoplay blocked by the phone (low-power mode, data saver): a play button on the poster instead of "Click for sound" */
+.sales-play-badge { display: none; }
+.video-panel.autoplay-blocked:not(.has-sound) .sales-play-badge {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  width: 68px;
+  height: 68px;
+  border: none;
+  border-radius: 50%;
+  background: var(--gold);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 4px;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.video-panel.autoplay-blocked:not(.has-sound) .sales-sound-btn { display: none; }
 .sales-sound-btn:focus-visible { outline: 3px solid var(--cream); outline-offset: 3px; }
 
 .sales-sound-btn svg { width: 1.2em; height: 1.2em; flex: none; }

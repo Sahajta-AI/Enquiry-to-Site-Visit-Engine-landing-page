@@ -292,8 +292,11 @@
     // jump up over the video's text whenever its control bar shows; Shubhang 15 Nov)
     ownCaptions(video, $('ty-video-cap'));
 
+    // "Watched" belongs to this booking (a new booking starts fresh); the pre-call page has its own
+    var b = readBooking();
+    var watchKey = 'sv_watched:' + (b ? [b.slotDate, b.slotTime, b.rescheduleUrl || ''].join('|') : 'pre-call');
     var watched = false;
-    try { watched = sessionStorage.getItem('sv_watched') === '1'; } catch (e) {}
+    try { watched = sessionStorage.getItem(watchKey) === '1'; sessionStorage.removeItem('sv_watched'); } catch (e) {}
     show($('ty-watched'), watched);
 
     // Phones and tablets (touch, no mouse) get our own control bar and tap-to-pause, the same as the sales video
@@ -325,14 +328,20 @@
     video.addEventListener('pause', function () { wrap.classList.remove('is-playing'); });
     video.addEventListener('ended', function () { wrap.classList.remove('is-playing'); });
 
-    // "Watched" shows only after 90%, and stays after a reload (session memory)
+    // "Watched" shows only after 90% of the video was actually played (skipping ahead doesn't count),
+    // and stays after a reload for this booking (session memory)
+    var playedSeconds = function () {
+      var r = video.played, total = 0;
+      for (var i = 0; r && i < r.length; i++) total += r.end(i) - r.start(i);
+      return total;
+    };
     video.addEventListener('timeupdate', function () {
       if (!video.duration || !isFinite(video.duration)) return;
-      if (video.currentTime / video.duration < 0.9) return;
+      if (playedSeconds() / video.duration < 0.9) return;
       if (!sent90) { sent90 = true; track('PreCallVideo90'); }
       if (!watched) {
         watched = true;
-        try { sessionStorage.setItem('sv_watched', '1'); } catch (e) {}
+        try { sessionStorage.setItem(watchKey, '1'); } catch (e) {}
         show($('ty-watched'), true);
       }
     });
