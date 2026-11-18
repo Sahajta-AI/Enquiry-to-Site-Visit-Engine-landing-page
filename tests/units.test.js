@@ -76,14 +76,28 @@ test('booking email without a video: item 1 says "See what to expect"; no Meet l
   assert.match(e.text, /on Google Meet:\nThe Google Meet link is in your calendar invite\./);
 });
 
-test('booking email HTML: only the three headings in bold, WhatsApp link shown short', () => {
+test('booking email HTML: only the three headings in bold, short link text; the plain copy keeps the full links', () => {
   const e = emails.bookingEmail(base);
-  const html = emails.toHtml(e.text, e.boldLines);
+  const html = emails.toHtml(e.htmlText, e.boldLines);
   assert.strictEqual((html.match(/<b>/g) || []).length, 3);
   assert.match(html, /<b>1\. Map your lead journey<\/b>/);
-  assert.match(html, /<a href="https:\/\/wa\.me\/919731173205\?text=YES%2C%20x">wa\.me\/919731173205<\/a>/);
+  assert.match(html, /<a href="https:\/\/meet\.google\.com\/abc-defg-hij">Join on Google Meet<\/a>/);
+  assert.match(html, /1\. <a href="https:\/\/warmchain\.sahajta\.com\/thank-you">Watch the short video<\/a>/);
+  assert.match(html, /if you haven’t already: <a href="https:\/\/wa\.me\/919731173205\?text=YES%2C%20x">Confirm on WhatsApp<\/a>/);
+  assert.match(html, /please reschedule before the call: <a href="https:\/\/cal\.com\/reschedule\/bk-1">Reschedule here<\/a>/);
+  assert.ok(!/>https?:\/\//.test(html)); // no long link shown as text
   assert.ok(!/<img|<table|style=/.test(html));
-  assert.ok(e.text.includes('https://wa.me/919731173205?text=YES%2C%20x')); // the plain copy has the full link
+  assert.ok(e.text.includes('https://wa.me/919731173205?text=YES%2C%20x'));
+  assert.ok(e.text.includes('1. Watch the short video: https://warmchain.sahajta.com/thank-you'));
+  const noVideo = emails.toHtml(emails.bookingEmail(Object.assign({}, base, { videoSet: false, meetLink: '' })).htmlText, []);
+  assert.match(noVideo, /1\. <a href="[^"]+">See what to expect<\/a>/);
+  assert.match(noVideo, /The Google Meet link is in your calendar invite\./);
+});
+
+test('second email HTML: Meet link shown as "Join on Google Meet"', () => {
+  const e = emails.secondEmail(Object.assign({}, base, { firstSubject: 'x' }));
+  assert.match(emails.toHtml(e.htmlText, []), /Here’s the Google Meet link: <a href="https:\/\/meet\.google\.com\/abc-defg-hij">Join on Google Meet<\/a>/);
+  assert.ok(e.text.includes('https://meet.google.com/abc-defg-hij'));
 });
 
 test('confirm message matches the page: zone added only outside India', () => {
