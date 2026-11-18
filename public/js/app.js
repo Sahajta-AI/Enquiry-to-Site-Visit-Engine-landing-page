@@ -630,7 +630,8 @@ document.addEventListener('DOMContentLoaded', () => {
         picker.selectedTimeStr = null;
       }
 
-      const morningSlots = availableSlots.filter(s => s.toLowerCase().includes('am') || s.startsWith('10:') || s.startsWith('11:'));
+      // Grouped by AM/PM only ("10:00 PM" is not morning)
+      const morningSlots = availableSlots.filter(s => /\bam$/i.test(String(s).trim()));
       const afternoonSlots = availableSlots.filter(s => !morningSlots.includes(s));
 
       const renderSlotBtn = (timeStr) => `
