@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@vercel/functions": "^3.10.6",
-    "express": "^4.19.2",
-    "nodemailer": "^9.0.3"
+    "express": "^4.19.2"
   }
 }

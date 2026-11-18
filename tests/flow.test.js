@@ -99,8 +99,7 @@ global.fetch = async (url, opts) => {
     return json({ messageId: 'q' + published.length });
   }
   if (url === 'https://api.resend.com/emails') {
-    const b = JSON.parse(opts.body);
-    if (!/^\[New Real Estate Lead\]/.test(b.subject)) alertsSent.push(b); // the team's own lead notice is not an alert
+    alertsSent.push(JSON.parse(opts.body));
     return json({ id: 'r1' });
   }
   throw new Error('Unmocked fetch: ' + url);

@@ -1,7 +1,6 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 const lcfg = require('./lib/config');
 const ltime = require('./lib/time');
@@ -149,18 +148,11 @@ function getLatestConfig() {
   }
 
   return {
-    DESTINATION_EMAIL: process.env.DESTINATION_EMAIL || 'shubhang@sahajta.com',
-    FROM_EMAIL: process.env.FROM_EMAIL || 'shubhang@sahajta.com',
     WHATSAPP_NUMBER: waNum,
     BRIEFING_VIDEO_URL: lcfg.briefingVideo().url,
     BRIEFING_VIDEO_POSTER: lcfg.briefingVideo().poster,
     BRIEFING_VIDEO_CAPTIONS: lcfg.briefingVideo().captions,
     DEMO_WHATSAPP_NUMBER: (process.env.DEMO_WHATSAPP_NUMBER || '').replace(/[^\d]/g, ''),
-    RESEND_API_KEY: process.env.RESEND_API_KEY || '',
-    SMTP_HOST: process.env.SMTP_HOST || 'smtp.gmail.com',
-    SMTP_PORT: process.env.SMTP_PORT || 465,
-    SMTP_USER: process.env.SMTP_USER || '',
-    SMTP_PASS: process.env.SMTP_PASS || '',
     CAL_API_KEY: process.env.CAL_API_KEY || ''
   };
 }
@@ -603,7 +595,7 @@ app.post('/api/submit-lead', async (req, res) => {
     console.error('⚠️ [Mark booked error]:', markErr.message);
   }
 
-  // Reply first. Everything else (the team email, the CRM, Meta) happens after the reply.
+  // Reply first. Everything else (the CRM, Meta) happens after the reply. No team email: the lead details are in Odoo.
   res.status(200).json({
     success: true, ok: true, test,
     message: 'Lead captured successfully.',
@@ -613,44 +605,12 @@ app.post('/api/submit-lead', async (req, res) => {
   });
 
   lafter.after(async () => {
-    const formattedSlot = bookedSlot || 'Pending calendar confirmation';
-    const timestamp = new Date().toISOString();
-
-    // 1. Internal team email summary
-    const teamSubject = `[New Real Estate Lead] ${name} - ${company}`;
-    const teamTextSummary = `
-===================================================
-ENQUIRY-TO-SITE-VISIT ENGINE - NEW QUALIFIED LEAD
-===================================================
-Full Name:            ${name}
-Company / Project:    ${company}
-Work Email:           ${email}
-WhatsApp Number:      ${whatsapp_number}
-
-[INTAKE QUALIFICATION]
-Q1 Project Situation: ${q1_situation || 'Not answered'}
-Q2 Implementation:    ${q2_urgency || 'Not answered'}
-
-[BOOKING DETAILS]
-Booked Slot:          ${formattedSlot}
-Timezone:             ${timezone || 'UTC'}
-Submitted At:         ${timestamp}
-
-[ATTRIBUTION & UTMS]
-UTM Source:           ${attrib.utm_source || 'Direct / None'}
-UTM Medium:           ${attrib.utm_medium || 'Direct / None'}
-UTM Campaign:         ${attrib.utm_campaign || 'Direct / None'}
-===================================================
-`;
     console.log('📥 [Lead captured]: booking made' + (test ? ' (test)' : ''));
-    const destinationList = config.DESTINATION_EMAIL.split(',').map(e => e.trim()).filter(Boolean);
-    const tasks = destinationList.map(dest => dispatchEmail({
-      to: dest, from: config.FROM_EMAIL, subject: teamSubject, text: teamTextSummary, config
-    }).catch(err => console.error(`⚠️ [Team email error for ${dest}]:`, err.message)));
+    const tasks = [];
 
-    // 2. The CRM (Odoo) is handled by the Odoo Brief's code: the lead at /api/lead, the booking through the Cal.com webhook
+    // The CRM (Odoo) is handled by the Odoo Brief's code: the lead at /api/lead, the booking through the Cal.com webhook
 
-    // 3. Meta, from the server: Schedule with the browser's shared event ID, then QualifiedBooking (once per booking)
+    // Meta, from the server: Schedule with the browser's shared event ID, then QualifiedBooking (once per booking)
     tasks.push((async () => {
       const common = {
         req, person: { name, email, phone: whatsapp_number }, sourceUrl: pageUrl, fbp, fbc, test
@@ -668,91 +628,6 @@ UTM Campaign:         ${attrib.utm_campaign || 'Direct / None'}
     await Promise.allSettled(tasks);
   });
 });
-
-/**
- * Universal Dual Email Transport Engine (Nodemailer SMTP primary, Resend API secondary)
- */
-async function dispatchEmail({ to, from, subject, text, html, config, isRetry = false }) {
-  // Method 1: Nodemailer (SMTP / Gmail)
-  if (config.SMTP_USER && config.SMTP_PASS) {
-    try {
-      const transporter = nodemailer.createTransport({
-        host: config.SMTP_HOST || 'smtp.gmail.com',
-        port: parseInt(config.SMTP_PORT) || 465,
-        secure: parseInt(config.SMTP_PORT) === 465,
-        connectionTimeout: 8000, greetingTimeout: 8000, socketTimeout: 8000,
-        auth: {
-          user: config.SMTP_USER,
-          pass: config.SMTP_PASS
-        }
-      });
-
-      const mailOptions = {
-        from: `"Sahajta AI" <${config.SMTP_USER}>`,
-        to: to,
-        subject: subject,
-        text: text,
-        html: html
-      };
-
-      const info = await transporter.sendMail(mailOptions);
-      console.log(`✅ [Nodemailer SMTP Dispatched to ${to}]: Message ID ${info.messageId}`);
-      return;
-    } catch (error) {
-      console.error(`❌ [Nodemailer SMTP Error for ${to}]:`, error.message);
-    }
-  }
-
-  // Method 2: Resend API
-  if (config.RESEND_API_KEY && !config.RESEND_API_KEY.includes('placeholder')) {
-    try {
-      const payload = {
-        from: from || 'onboarding@resend.dev',
-        to: [to],
-        subject: subject,
-        text: text
-      };
-      if (html) payload.html = html;
-
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.RESEND_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        signal: AbortSignal.timeout(8000),
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        if (response.status === 403 && errText.includes('testing emails to your own email address') && !isRetry) {
-          const primaryDest = config.DESTINATION_EMAIL.split(',')[0].trim();
-          console.log(`⚠️ [Resend Test Mode Note]: Rerouting preview email to account inbox (${primaryDest})...`);
-          
-          return dispatchEmail({
-            to: primaryDest,
-            from: from,
-            subject: `[TEST PREVIEW for ${to}] ${subject}`,
-            text: `[Originally sent to: ${to}]\n\n` + text,
-            html: html ? `<div style="background:#fef2f2; border:1px solid #fca5a5; padding:12px; font-weight:bold; color:#991b1b; margin-bottom:16px;">⚠️ [Test Mode Preview]: Originally sent to: ${to}</div>` + html : null,
-            config: config,
-            isRetry: true
-          });
-        }
-        throw new Error(`HTTP ${response.status}: ${errText}`);
-      }
-
-      const data = await response.json();
-      console.log(`✅ [Resend API Dispatched to ${to}]: Success ID ${data.id}`);
-      return;
-    } catch (error) {
-      console.error(`❌ [Resend API Error for ${to}]:`, error.message);
-    }
-  }
-
-  console.log(`ℹ️ [Email Logged for ${to}]: Subject: "${subject}".`);
-}
 
 // Start Server (local only; on Vercel, api/index.js imports the app instead)
 if (require.main === module) {
