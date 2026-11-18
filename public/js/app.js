@@ -1214,6 +1214,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ---------- Hero size: the same look on every laptop ----------
+  // The "Check if you qualify" button always fits the first screen; the client faces under it may not (Shubhang, 18 Nov).
   // The hero is laid out once for the boss's Mac screen (REF_W x REF_H) and then zoomed as one piece to fit this
   // screen, so the text, video and button box keep the same sizes next to each other on every laptop
   // (an HP at 1920x1080 with Windows' 125% scaling showed a small video beside full-size text, 17 Nov).
@@ -1242,7 +1243,10 @@ document.addEventListener('DOMContentLoaded', () => {
         inner.style.setProperty('--hero-w', w + 'px');
         const top = heroTop + panel.getBoundingClientRect().top - hero.getBoundingClientRect().top;
         const gap = parseFloat(getComputedStyle(box).marginTop) || 0;
-        const height = window.innerHeight / s - top - gap - box.offsetHeight - BOTTOM;
+        // What must fit is the box down to the "Check if you qualify" button; the client faces under it may go below
+        const btn = box.querySelector('.btn-primary');
+        const need = btn ? btn.getBoundingClientRect().bottom - box.getBoundingClientRect().top + 12 : box.offsetHeight;
+        const height = window.innerHeight / s - top - gap - need - BOTTOM;
         w = Math.max(MIN, Math.min(room, Math.floor(height * 16 / 9)));
       }
       hero.style.removeProperty('zoom');
