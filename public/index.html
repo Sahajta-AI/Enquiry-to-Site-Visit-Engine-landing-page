@@ -24,7 +24,7 @@
 
   <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/syne-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/css/main.css?v=2.9.6">
+  <link rel="stylesheet" href="/css/main.css?v=2.9.7">
 
   <!-- A nudge email's link is /?r={code}. Keep the code in session memory and take it out of the address
        BEFORE the Meta Pixel (and Clarity, once added) load, so neither records it. -->
@@ -79,6 +79,7 @@
           <span class="video-panel-text" id="sales-placeholder" hidden>Video coming soon</span>
           <video id="sales-video" class="sales-video" playsinline muted preload="none" poster="/videos/sales-poster.webp"
                  aria-label="How the Warm-Chain System gets you more site visits"></video>
+          <div class="sales-tap" id="sales-tap" aria-hidden="true"></div>
           <p class="vid-cap" id="sales-cap" aria-hidden="true"></p>
           <button type="button" class="sales-sound-btn" id="sales-sound-btn">
             <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h4l5-4v14l-5-4H3z" fill="currentColor"/><path d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -465,6 +466,6 @@
   </div>
 
   <script src="/js/tracking.js?v=1.0.0" defer></script>
-  <script src="/js/app.js?v=2.8.2" defer></script>
+  <script src="/js/app.js?v=2.8.3" defer></script>
 </body>
 </html>

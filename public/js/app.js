@@ -1028,8 +1028,18 @@ document.addEventListener('DOMContentLoaded', () => {
           const at = lines.findIndex(l => l.includes('-->'));
           if (at < 0) return null;
           const [from, to] = lines[at].split('-->').map(x => vttTime(x.trim().split(/\s+/)[0]));
-          return { from, to, text: lines.slice(at + 1).join('\n').trim() };
-        }).filter(Boolean);
+          const parts = lines.slice(at + 1).map(l => l.trim()).filter(Boolean);
+          // One line at a time (Shubhang, 18 Nov): a 2-line caption is shown as 2 one-line captions,
+          // its time shared by the length of each line
+          const total = parts.reduce((n, l) => n + l.length, 0) || 1;
+          let start = from;
+          return parts.map((text, i) => {
+            const end = i === parts.length - 1 ? to : start + (to - from) * text.length / total;
+            const cue = { from: start, to: end, text };
+            start = end;
+            return cue;
+          });
+        }).filter(Boolean).flat();
         showCaptions();
       }).catch(() => {});
     };
@@ -1101,6 +1111,30 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     salesBtn.addEventListener('click', startWithSound);
+
+    // Phones: the video's own controls take every tap on the picture, so a tap never paused it.
+    // An invisible layer over the picture (the bottom strip stays free for the control bar) takes the tap instead:
+    // before the sound is on it starts it with sound, after that it pauses and plays.
+    const tapLayer = document.getElementById('sales-tap');
+    if (tapLayer) {
+      tapLayer.addEventListener('click', () => {
+        if (!withSound) { startWithSound(); return; }
+        if (salesVideo.paused) salesVideo.play().catch(() => {}); else salesVideo.pause();
+      });
+    }
+
+    // While the control bar shows (paused, or just after the mouse or a finger moved over the video),
+    // the caption moves up above it, so it never covers the seek bar; then it goes back to the very bottom.
+    let barTimer = 0;
+    const barUp = () => {
+      if (!withSound) return;
+      salesPanel.classList.add('bar-up');
+      clearTimeout(barTimer);
+      barTimer = setTimeout(() => { if (!salesVideo.paused) salesPanel.classList.remove('bar-up'); }, 2800);
+    };
+    ['pointermove', 'pointerdown', 'touchstart'].forEach(ev => salesPanel.addEventListener(ev, barUp, { passive: true }));
+    salesVideo.addEventListener('pause', () => { if (withSound) { clearTimeout(barTimer); salesPanel.classList.add('bar-up'); } });
+    salesVideo.addEventListener('play', barUp);
 
     salesVideo.addEventListener('timeupdate', () => {
       if (!withSound || !salesVideo.duration || !isFinite(salesVideo.duration)) return;
