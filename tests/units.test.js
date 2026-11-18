@@ -289,3 +289,25 @@ test('nudge-link booking: each saved ad-source detail this visit lacks is reused
     if (prev === undefined) delete process.env.NEW_TRACKING; else process.env.NEW_TRACKING = prev;
   }
 });
+
+test('logs: emails, phone numbers and quoted values are masked; alert subjects lose the person', () => {
+  const logsafe = require('../lib/logsafe');
+  const s = logsafe.safe(`Odoo crm.lead/create: invalid value 'Asha Rao' for asha.rao+1@example.co.in, phone +91 98765 43210`);
+  assert.ok(!/asha|Rao|example|98765/i.test(s), s);
+  assert.match(s, /\[email\]/);
+  assert.match(s, /\[number\]/);
+  assert.strictEqual(logsafe.subjectOnly('Meet link missing: Asha Rao'), 'Meet link missing');
+  assert.strictEqual(logsafe.subjectOnly('Didn’t book: Asha Rao, Rao Estates'), 'Didn’t book');
+  assert.strictEqual(logsafe.safe('Cal.com booking lookup failed: 500'), 'Cal.com booking lookup failed: 500');
+});
+
+test('reschedule pop-up: the booking page path comes from CAL_BOOKING_PAGE (a full cal.com address works too)', async () => {
+  const cal = require('../lib/cal');
+  const prev = process.env.CAL_BOOKING_PAGE;
+  try {
+    process.env.CAL_BOOKING_PAGE = 'https://cal.com/shubhang-sethi/enquiry-to-site-visit-engine/';
+    assert.strictEqual(await cal.bookingPagePath(), 'shubhang-sethi/enquiry-to-site-visit-engine');
+  } finally {
+    if (prev === undefined) delete process.env.CAL_BOOKING_PAGE; else process.env.CAL_BOOKING_PAGE = prev;
+  }
+});

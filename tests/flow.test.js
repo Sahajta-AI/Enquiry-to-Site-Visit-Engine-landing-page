@@ -733,6 +733,19 @@ test('7.4 open times failing to load: one alert per 30 minutes, also by the back
   assert.strictEqual(r2.status, 200);
 });
 
+test('7.4 a bad time zone (or month) is refused with an error and sends no "Open times are not loading" alert', async () => {
+  reset();
+  for (const q of ['month=2026-11&timeZone=Not/AZone', 'month=2026-11&timeZone=%3Cscript%3E', 'month=2026-13&timeZone=Asia/Kolkata', 'month=abc&timeZone=Asia/Kolkata']) {
+    const r = await realFetch(base + '/api/available-slots?' + q);
+    assert.strictEqual(r.status, 400, q);
+  }
+  await new Promise(r => setTimeout(r, 150));
+  assert.strictEqual(sent.filter(e => e.subject === 'Open times are not loading').length, 0);
+  assert.strictEqual(alertsSent.length, 0);
+  // a real zone still works
+  assert.strictEqual((await realFetch(base + '/api/available-slots?month=2026-11&timeZone=Asia/Dubai')).status, 200);
+});
+
 test('4 Origin: the live address, the boss\'s address and preview addresses are allowed; other sites are not', async () => {
   for (const origin of ['https://warmchain.sahajta.com', 'https://site-visit-engine-landing-page.vercel.app', 'https://preview.example.test']) {
     assert.strictEqual((await post('/api/lead', lead({ form_ms: 0 }), { Origin: origin })).status, 200, origin);

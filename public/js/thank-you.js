@@ -15,7 +15,8 @@
     briefingVideoUrl: '/videos/briefing-540.mp4',
     briefingVideoPoster: '/videos/briefing-poster.jpg',
     briefingVideoCaptions: '/videos/briefing.vtt',
-    demoWhatsappNumber: ''
+    demoWhatsappNumber: '',
+    calBookingPage: '' // e.g. "shubhang-sethi/enquiry-to-site-visit-engine": the reschedule pop-up needs it
   };
 
   function $(id) { return document.getElementById(id); }
@@ -370,16 +371,69 @@
     video.load();
   }
 
+  // ---------- Reschedule: a pop-up on our page (Cal.com's own embed, in reschedule mode), not Cal.com's site ----------
+  // If the embed can't load, the link simply opens Cal.com's reschedule page as before.
+  var calLoading = null;
+  function loadCalEmbed() {
+    if (calLoading) return calLoading;
+    calLoading = new Promise(function (resolve, reject) {
+      // Cal.com's standard loader: queues calls until embed.js has loaded
+      (function (C, A, L) { var p = function (a, ar) { a.q.push(ar); }; var d = C.document; C.Cal = C.Cal || function () { var cal = C.Cal; var ar = arguments; if (!cal.loaded) { cal.ns = {}; cal.q = cal.q || []; var s = d.createElement('script'); s.src = A; s.async = true; s.onload = function () { resolve(); }; s.onerror = function () { reject(new Error('embed')); }; d.head.appendChild(s); cal.loaded = true; } if (ar[0] === L) { var api = function () { p(api, arguments); }; var namespace = ar[1]; api.q = api.q || []; if (typeof namespace === 'string') { cal.ns[namespace] = cal.ns[namespace] || api; p(cal.ns[namespace], ar); p(cal, ['initNamespace', namespace]); } else p(cal, ar); return; } p(cal, ar); }; })(window, 'https://app.cal.com/embed/embed.js', 'init');
+      window.Cal('init', 'resched', { origin: 'https://cal.com' });
+      setTimeout(function () { reject(new Error('timeout')); }, 8000);
+    });
+    return calLoading;
+  }
+
+  // The new time from Cal.com, in the booking's own zone: "2026-11-21" and "10:30 AM", as the page keeps them
+  function slotInZone(iso, tz) {
+    var parts = {};
+    new Intl.DateTimeFormat('en-US', { timeZone: tz || 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true })
+      .formatToParts(new Date(iso)).forEach(function (x) { parts[x.type] = x.value; });
+    return { slotDate: parts.year + '-' + parts.month + '-' + parts.day, slotTime: parts.hour + ':' + parts.minute + ' ' + String(parts.dayPeriod || '').toUpperCase() };
+  }
+
+  function onRescheduled(data) {
+    var start = data && (data.startTime || (data.booking && data.booking.startTime));
+    var uid = data && (data.uid || (data.booking && data.booking.uid));
+    if (!booking || !start) return;
+    var slot = slotInZone(start, booking.timezone);
+    booking.slotDate = slot.slotDate;
+    booking.slotTime = slot.slotTime;
+    if (uid) booking.rescheduleUrl = 'https://cal.com/reschedule/' + encodeURIComponent(uid);
+    try { sessionStorage.setItem('sv_booked', JSON.stringify(booking)); } catch (e) {}
+    renderTop();
+    wireButtonLinksOnly();
+  }
+
+  function wireReschedule() {
+    var link = $('ty-resched-link');
+    if (!link) return;
+    link.addEventListener('click', function (e) {
+      var href = link.getAttribute('href') || '';
+      var m = href.match(/^https:\/\/cal\.com\/reschedule\/([^/?#]+)/);
+      if (!m || !settings.calBookingPage) return; // no pop-up possible: the link opens Cal.com as before
+      e.preventDefault();
+      track('RescheduleOpen');
+      loadCalEmbed().then(function () {
+        var cal = window.Cal.ns.resched;
+        cal('on', { action: 'rescheduleBookingSuccessfulV2', callback: function (ev) { onRescheduled(ev && ev.detail && ev.detail.data); } });
+        cal('modal', { calLink: settings.calBookingPage, config: { rescheduleUid: decodeURIComponent(m[1]), layout: 'month_view', theme: 'light' } });
+      }).catch(function () { window.location.href = href; });
+    });
+  }
+
   // ---------- Go ----------
   renderTop();
   wireButtons();
+  wireReschedule();
   applySettings(); // shows the hosted video at once; the settings below can only hide it or swap the file
 
   fetch('/api/config')
     .then(function (r) { return r.json(); })
     .then(function (data) {
       if (!data) return;
-      ['whatsappNumber', 'briefingVideoUrl', 'briefingVideoPoster', 'briefingVideoCaptions', 'demoWhatsappNumber'].forEach(function (k) {
+      ['whatsappNumber', 'briefingVideoUrl', 'briefingVideoPoster', 'briefingVideoCaptions', 'demoWhatsappNumber', 'calBookingPage'].forEach(function (k) {
         if (typeof data[k] === 'string') settings[k] = data[k];
       });
       wireButtonLinksOnly();

@@ -417,7 +417,8 @@ test('5.4 a lost lead brought back by a booking from a Meta ad: Lead Channel bec
   leads.push({ id: ++seq, name: '[TEST] Lost Co (Lost)', email_from: 'lost-meta@example.com', phone: '+919876543210', active: false, stage_id: STAGES.New,
     lost_reason_id: 9, x_studio_lead_channel: false, priority: '1' });
   const l = leads[leads.length - 1];
-  await hook('BOOKING_CREATED', 'bk-lost-meta', 'lost-meta@example.com', inDays(3, 10).toISOString(),
+  const callAt = inDays(3, 10);
+  await hook('BOOKING_CREATED', 'bk-lost-meta', 'lost-meta@example.com', callAt.toISOString(),
     { metadata: { lead_event_id: 'lead-bk-lost-meta', utm_source: 'facebook', fbclid: 'abc', test: 'yes' } });
   await settle();
   assert.strictEqual(l.active, true, 'reopened');
@@ -425,7 +426,9 @@ test('5.4 a lost lead brought back by a booking from a Meta ad: Lead Channel bec
   assert.strictEqual(l.stage_id, STAGES['Call Scheduled']);
   const evening = actsOf(l.id, 'Personal message the evening before the call').filter(a => !a.done);
   assert.strictEqual(evening.length, 1, 'one evening reminder');
-  assert.strictEqual(evening[0].date_deadline, isoDay(2), 'dated the evening before the call (the Meta Ads reminder step ran)');
+  // the day before the call, in India time
+  const dayBefore = new Date(callAt.getTime() + 5.5 * 3600000 - 86400000).toISOString().slice(0, 10);
+  assert.strictEqual(evening[0].date_deadline, dayBefore, 'dated the evening before the call (the Meta Ads reminder step ran)');
 });
 
 test('5.4 a booking made in Cal.com with no lead: a new lead from the booking, stars 0 and "No form answers" without notes', async () => {

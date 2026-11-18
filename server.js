@@ -1,4 +1,5 @@
 const express = require('express');
+const logsafe = require('./lib/logsafe');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -113,7 +114,7 @@ app.post('/api/tracking-test', async (req, res) => {
     const out = await ltrackingtest.handle(req);
     res.status(out.status).json(out.body);
   } catch (err) {
-    console.error('⚠️ [/api/tracking-test]:', err.message);
+    console.error('⚠️ [/api/tracking-test]:', logsafe.safe(err.message));
     res.status(500).json({ ok: false });
   }
 });
@@ -160,9 +161,11 @@ function getLatestConfig() {
 // Config endpoint for client runtime variables.
 // The Pixel ID is the live one on production and the Sandbox one on previews (never a fallback to the live one).
 // No Cal.com booking link: bookings come only through our form.
-app.get('/api/config', (req, res) => {
+app.get('/api/config', async (req, res) => {
   const config = getLatestConfig();
+  const calBookingPage = await lcal.bookingPagePath().catch(() => '');
   res.json({
+    calBookingPage,
     metaPixelId: lcfg.pixelId(),
     pixelKind: lcfg.isProduction() ? 'live' : 'sandbox',
     clarityId: lcfg.clarityId(),
@@ -190,7 +193,7 @@ app.post('/api/lead', async (req, res) => {
   try {
     out = await lleads.saveLead(req.body || {}, req);
   } catch (err) {
-    console.error('⚠️ [/api/lead]:', err.message);
+    console.error('⚠️ [/api/lead]:', logsafe.safe(err.message));
     out = { status: 503, body: { ok: false, code: 'store' } };
   }
   res.status(out.status).json(out.body);
@@ -209,7 +212,7 @@ app.post('/api/lead-signal', async (req, res) => {
     const result = await lleads.handleSignal({ kind: b.kind, leadEventId: b.lead_event_id, resumeCode: b.resume_code });
     return res.status(200).json({ ok: true, result });
   } catch (err) {
-    console.error('⚠️ [/api/lead-signal]:', err.message);
+    console.error('⚠️ [/api/lead-signal]:', logsafe.safe(err.message));
     return res.status(200).json({ ok: false });
   }
 });
@@ -239,15 +242,15 @@ app.post('/api/cal-webhook', async (req, res) => {
   try {
     out = await lwebhook.accept(req.body);
   } catch (err) {
-    console.error('❌ [/api/cal-webhook record]:', err.message);
+    console.error('❌ [/api/cal-webhook record]:', logsafe.safe(err.message));
     out = { status: 200, result: 'record-failed' }; // Odoo still gets the booking below
   }
   res.status(out.status).json({ ok: true, result: out.result });
   lafter.after(async () => {
     if (out.uid) {
-      try { await lwebhook.sendFirst(out.uid); } catch (err) { console.error('❌ [/api/cal-webhook email]:', err.message); }
+      try { await lwebhook.sendFirst(out.uid); } catch (err) { console.error('❌ [/api/cal-webhook email]:', logsafe.safe(err.message)); }
     }
-    try { await lodooleads.onWebhook(req.body); } catch (err) { console.error('❌ [/api/cal-webhook Odoo]:', err.message); }
+    try { await lodooleads.onWebhook(req.body); } catch (err) { console.error('❌ [/api/cal-webhook Odoo]:', logsafe.safe(err.message)); }
   });
 });
 
@@ -259,7 +262,7 @@ app.post('/api/jobs/run', async (req, res) => {
     const result = await ltasks.runJob(job);
     return res.status(200).json({ ok: true, result });
   } catch (err) {
-    console.error('❌ [/api/jobs/run]:', err.message);
+    console.error('❌ [/api/jobs/run]:', logsafe.safe(err.message));
     return res.status(500).json({ ok: false }); // the queue tries again
   }
 });
@@ -271,7 +274,7 @@ app.get('/api/cron/odoo-signals', async (req, res) => {
     const out = await lodoosignals.run({ tests: false });
     return res.status(200).json({ ok: out.ok, result: out.result });
   } catch (err) {
-    console.error('❌ [/api/cron/odoo-signals]:', err.message);
+    console.error('❌ [/api/cron/odoo-signals]:', logsafe.safe(err.message));
     return res.status(500).json({ ok: false });
   }
 });
@@ -288,7 +291,7 @@ app.get('/api/jobs/tick', async (req, res) => {
     }
     return res.status(200).json({ ok: true, ran });
   } catch (err) {
-    console.error('❌ [/api/jobs/tick]:', err.message);
+    console.error('❌ [/api/jobs/tick]:', logsafe.safe(err.message));
     return res.status(500).json({ ok: false });
   }
 });
@@ -298,6 +301,10 @@ app.get('/api/available-slots', async (req, res) => {
   const dateStr = req.query.date;
   const monthStr = req.query.month; // e.g. "2026-08"
   const userTimeZone = req.query.timeZone || 'Asia/Kolkata';
+  // A bad time zone (a bot, or a broken link) is the caller's mistake, not Cal.com failing: refuse it, and no alert
+  if (!isValidTimeZone(userTimeZone)) return res.status(400).json({ ok: false, error: 'bad-timezone' });
+  if (monthStr && !/^\d{4}-(0[1-9]|1[0-2])$/.test(monthStr)) return res.status(400).json({ ok: false, error: 'bad-month' });
+  if (dateStr && !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return res.status(400).json({ ok: false, error: 'bad-date' });
 
   const config = getLatestConfig();
   const calApiKey = config.CAL_API_KEY || process.env.CAL_API_KEY || '';
@@ -350,7 +357,7 @@ app.get('/api/available-slots', async (req, res) => {
         return res.json({ month: monthStr, slotsByDate, availableDates });
       }
     } catch (err) {
-      console.warn('Cal API month slots error:', err.message);
+      console.warn('Cal API month slots error:', logsafe.safe(err.message));
       slotsFailed = true;
     }
   }
@@ -386,7 +393,7 @@ app.get('/api/available-slots', async (req, res) => {
         return res.json({ date: dateStr, slots: slotsList });
       }
     } catch (err) {
-      console.warn('Cal API slot fetch error:', err.message);
+      console.warn('Cal API slot fetch error:', logsafe.safe(err.message));
       slotsFailed = true;
     }
   }
@@ -577,7 +584,7 @@ app.post('/api/submit-lead', async (req, res) => {
         }
       } catch (calErr) {
         timedOut = calErr.name === 'TimeoutError';
-        console.error('⚠️ [Cal.com booking error]:', timedOut ? 'timed out after 8 seconds' : calErr.message);
+        console.error('⚠️ [Cal.com booking error]:', timedOut ? 'timed out after 8 seconds' : logsafe.safe(calErr.message));
       }
     }
 
@@ -601,7 +608,7 @@ app.post('/api/submit-lead', async (req, res) => {
     }
     await lleads.markBooked(leadEventId, email);
   } catch (markErr) {
-    console.error('⚠️ [Mark booked error]:', markErr.message);
+    console.error('⚠️ [Mark booked error]:', logsafe.safe(markErr.message));
   }
 
   // Reply first. Everything else (the CRM, Meta) happens after the reply. No team email: the lead details are in Odoo.
@@ -632,7 +639,7 @@ app.post('/api/submit-lead', async (req, res) => {
           if (r.ok && !r.skipped) await lstore.set(key, { at: Date.now() }, { ttl: 90 * 86400 });
         }
       }
-    })().catch(err => console.error('⚠️ [Meta send error]:', err.message)));
+    })().catch(err => console.error('⚠️ [Meta send error]:', logsafe.safe(err.message))));
 
     await Promise.allSettled(tasks);
   });
