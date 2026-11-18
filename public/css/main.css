@@ -1703,10 +1703,7 @@ video::-webkit-media-controls-overlay-play-button {
 }
 
 @media (max-width: 767px) {
-  body {
-    padding-bottom: 84px;
-  }
-
+  /* No space under the footer for the sticky button: it hides whenever the footer is on screen */
   .site-header {
     padding: 1rem 0;
   }
