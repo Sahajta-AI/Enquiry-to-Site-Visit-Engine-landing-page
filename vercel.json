@@ -17,6 +17,12 @@
       "permanent": true
     },
     {
+      "source": "/((?!api/).*)",
+      "has": [{ "type": "host", "value": "enquiry-to-site-visit-engine.vercel.app" }],
+      "destination": "https://warmchain.sahajta.com/$1",
+      "permanent": true
+    },
+    {
       "source": "/fit-and-book",
       "destination": "/",
       "permanent": false

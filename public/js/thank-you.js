@@ -166,13 +166,30 @@
       var t = video.textTracks && video.textTracks[0];
       if (!t) return false;
       t.mode = 'hidden'; // loaded and timed, but not drawn by the browser
+      // One line at a time, like the sales video (Shubhang, 18 Nov): only the newest caption, and a 2-line caption
+      // is shown as 2 one-line captions, its time shared by the length of each line (one long line got cut with "...")
+      var shown = null;
       function draw() {
         var cues = t.activeCues, text = '';
-        for (var i = 0; cues && i < cues.length; i++) text += (text ? '\n' : '') + cues[i].text;
+        var cue = cues && cues.length ? cues[cues.length - 1] : null;
+        if (cue) {
+          var parts = String(cue.text).split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+          var total = parts.reduce(function (n, l) { return n + l.length; }, 0) || 1;
+          var at = cue.startTime, now = video.currentTime;
+          for (var i = 0; i < parts.length; i++) {
+            var end = i === parts.length - 1 ? cue.endTime : at + (cue.endTime - cue.startTime) * parts[i].length / total;
+            if (now < end || i === parts.length - 1) { text = parts[i]; break; }
+            at = end;
+          }
+        }
+        if (text === shown) return;
+        shown = text;
         box.textContent = text;
         box.classList.toggle('is-on', !!text);
       }
       t.addEventListener('cuechange', draw);
+      video.addEventListener('timeupdate', draw);
+      video.addEventListener('seeked', draw);
       draw();
       return true;
     }

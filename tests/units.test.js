@@ -252,3 +252,19 @@ test('sales video: no address plays the Mux stream, "none" hides it; poster and 
     assert.strictEqual(lcfg.salesVideo().url, 'https://video.example.test/sales.mp4');
   } finally { if (keep === undefined) delete process.env.SALES_VIDEO_URL; else process.env.SALES_VIDEO_URL = keep; }
 });
+
+test('"Didn\'t book" email: the answers in the words the person picked on screen, not the saved values', () => {
+  const lead = { name: 'Asha Rao', company: 'Rao Estates', email: 'a@x.com', whatsapp_number: '9876543210',
+    q1_situation: 'We run paid ads but leads go cold because follow-up is slow', q2_urgency: 'Within the next 30 days' };
+  const e = emails.leaveEmail('didnt_book', lead, '');
+  assert.match(e.text, /What’s happening right now: We run ads, but leads go cold because follow-up is slow\n/);
+  assert.match(e.text, /When they’d want it running: Within 30 days$/);
+});
+
+test('the on-screen words in lib/qualify.js match the form exactly (every saved value, every label)', () => {
+  const html = require('fs').readFileSync(require('path').join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  const pairs = [...html.matchAll(/data-value="([^"]+)">\s*<span class="option-label-text">([^<]+)<\/span>/g)].map(m => [m[1], m[2]]);
+  assert.strictEqual(pairs.length, 8);
+  pairs.forEach(([value, label]) => assert.strictEqual(qualify.SHOWN[value], label, value));
+  [...qualify.Q1_VALUES, ...qualify.Q2_VALUES].forEach(v => assert.ok(qualify.SHOWN[v], 'label for ' + v));
+});
