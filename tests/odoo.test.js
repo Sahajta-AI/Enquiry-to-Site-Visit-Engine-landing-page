@@ -473,6 +473,22 @@ test('5.5 moved: a note and the new date (a new reminder if it was done); cancel
   assert.ok(!sent.some(s => /moved|cancel/i.test(s.subject)), 'no email from us for a move or a cancel');
 });
 
+test('5.5 a cancel when the lead is no longer in Call Scheduled still marks the "evening before" reminder done', async () => {
+  reset();
+  const b = leadBody();
+  await sendLead(b);
+  const l = leads[0];
+  await hook('BOOKING_CREATED', 'bk-q', b.email, inDays(3, 10).toISOString());
+  await settle();
+  assert.strictEqual(actsOf(l.id, 'Personal message the evening before the call').filter(a => !a.done).length, 1);
+  l.stage_id = STAGES.Qualified; // Shubhang moved it on
+  await hook('BOOKING_CANCELLED', 'bk-q', b.email, inDays(3, 10).toISOString());
+  await settle();
+  assert.strictEqual(l.stage_id, STAGES.Qualified, 'the stage is left alone');
+  assert.ok(notesOf(l.id).includes('Call cancelled'));
+  assert.strictEqual(actsOf(l.id, 'Personal message the evening before the call').filter(a => !a.done).length, 0, 'no open evening reminder');
+});
+
 test('5.5 a cancel on a lost or won lead adds only a note; no lead found changes nothing', async () => {
   reset();
   const b = leadBody();

@@ -766,9 +766,10 @@ html.hero-zoomed .cta-box .btn-primary { min-width: 340px; min-height: 60px; fon
   display: none !important;
 }
 
-/* Hide only the central native start button; keep the controls bar */
-video::-webkit-media-controls-start-playback-button,
-video::-webkit-media-controls-overlay-play-button {
+/* Client video cards only: hide the browser's central start button (our gold one starts them); keep the controls bar.
+   Not on the sales or thank-you video: in full screen on Android that centre button is the only play/pause. */
+.video-wrapper video::-webkit-media-controls-start-playback-button,
+.video-wrapper video::-webkit-media-controls-overlay-play-button {
   display: none !important;
   -webkit-appearance: none !important;
   opacity: 0 !important;
