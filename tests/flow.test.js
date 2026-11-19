@@ -481,6 +481,41 @@ test('8.3: nudge 1 went but nudge 2 could not be queued: the retry never sends n
   assert.strictEqual(published.length, before + 1, 'nudge 2 is queued now');
 });
 
+test('8.3: nudge 1 went but saving "sent" failed: a retry never sends it again and Shubhang is asked to check; a Gmail failure still retries', async () => {
+  reset();
+  const b = lead({ email: 'unsure@example.com', name: 'Uma Sen' });
+  await post('/api/lead', b);
+  await post('/api/lead-signal', { kind: 'didnt_book', lead_event_id: b.lead_event_id });
+  const nudges = () => sent.filter(e => e.to === 'unsure@example.com' && /One step left/.test(e.subject));
+  // the store refuses the "sent" save (twice) right after Gmail sent it
+  const realUpdate = store.update;
+  store.update = async (key, patch) => { if (patch && patch.nudge1 && patch.nudge1.sentAt) throw new Error('store down'); return realUpdate(key, patch); };
+  try {
+    const job = published.find(p => !p.ran); job.ran = true;
+    const raw = JSON.stringify({ jobId: job.jobId });
+    await post('/api/jobs/run', raw, { 'upstash-signature': qstashSig(raw) });
+  } finally { store.update = realUpdate; }
+  assert.strictEqual(nudges().length, 1, 'Gmail sent it once');
+  const code = nudges()[0].text.match(/\?r=([A-Za-z0-9_-]{22})/)[1];
+  // the retry
+  assert.strictEqual(await tasks.runTask('nudge1', code, 2), 'stopped:unsure');
+  assert.strictEqual(nudges().length, 1, 'never a second nudge 1');
+  const a = alertsSent.filter(x => /may not have gone/.test(x.subject));
+  assert.strictEqual(a.length, 1);
+  assert.match(a[0].text, /^Nudge email may not have gone: Uma Sen, Skyline Homes\. .*Check Sent in Gmail/);
+
+  // Gmail fails once: the claim is cleared, so the retry sends it (once)
+  reset();
+  const b2 = lead({ email: 'retry@example.com', name: 'Ravi Nair' });
+  await post('/api/lead', b2);
+  await post('/api/lead-signal', { kind: 'didnt_book', lead_event_id: b2.lead_event_id });
+  gmailFailures = 1;
+  await runQueue();
+  gmailFailures = 0;
+  assert.strictEqual(sent.filter(e => e.to === 'retry@example.com' && /^One step left/.test(e.subject)).length, 1, 'sent on the retry, once');
+  assert.strictEqual(alertsSent.length, 0);
+});
+
 test('8.3: a failing nudge is tried 3 times, then Shubhang is alerted with the brief\'s words', async () => {
   reset();
   const b = lead({ email: 'fail@example.com', name: 'Fay Roy' });
