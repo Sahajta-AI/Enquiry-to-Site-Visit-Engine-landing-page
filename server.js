@@ -546,7 +546,9 @@ app.post('/api/submit-lead', async (req, res) => {
   const scheduleId = /^[0-9a-f-]{36}$/i.test(String(req.body.schedule_event_id || '')) ? req.body.schedule_event_id : crypto.randomUUID();
   const leadEventId = nudgeRec ? nudgeRec.leadEventId : String(req.body.lead_event_id || '');
   const savedLead = (nudgeRec && nudgeRec.lead) || {};
-  const attrib = lleads.cleanAttrib(req.body.sv_attrib || savedLead.sv_attrib);
+  // From a nudge's link, each saved ad detail this visit lacks is reused, one by one; this visit's own details win
+  // (the same merge as the booking metadata, lib/bookingmeta.js)
+  const attrib = Object.assign({}, lleads.cleanAttrib(savedLead.sv_attrib), lleads.cleanAttrib(req.body.sv_attrib));
   const fbp = req.body.fbp || lleads.cookieFrom(req, '_fbp') || savedLead.fbp || '';
   const fbc = lmeta.buildFbc(req.body.fbc || lleads.cookieFrom(req, '_fbc') || savedLead.fbc || '', attrib);
   const pageUrl = String(req.body.page_url || '').slice(0, 500);

@@ -375,6 +375,26 @@ test('8.3: the link opens the time step (resume), returns only the first name, a
   assert.strictEqual(sent.filter(e => /Re: One step left/.test(e.subject)).length, 0);
 });
 
+test('8.3: a nudge-link booking: Meta\'s Schedule event reuses each saved ad detail the new visit lacks (fbclid -> fbc)', async () => {
+  reset();
+  const body = lead({ email: 'sched@example.com', name: 'Sam Das', fbc: '', sv_attrib: { utm_source: 'facebook', fbclid: 'SAVEDCLICK', first_seen: '1763000000000' } });
+  await post('/api/lead', body);
+  await post('/api/lead-signal', { kind: 'didnt_book', lead_event_id: body.lead_event_id });
+  await runQueueUntil(() => sent.some(e => /One step left/.test(e.subject) && e.to === 'sched@example.com'));
+  const code = sent.find(e => /One step left/.test(e.subject) && e.to === 'sched@example.com').text.match(/\?r=([A-Za-z0-9_-]{22})/)[1];
+  metaCalls.length = 0;
+  // the new visit has only its own campaign, no click id and no fbc cookie
+  const slot = { resume_code: code, slotDate: day(), slotTime: '11:00 AM', bookedSlot: 'x', timezone: 'Asia/Kolkata', sv_attrib: { utm_campaign: 'new-campaign' } };
+  assert.strictEqual((await (await post('/api/submit-lead', slot)).json()).success, true);
+  await new Promise(r => setTimeout(r, 150));
+  const schedule = metaCalls.find(c => c.event.event_name === 'Schedule');
+  assert.ok(schedule, 'Schedule sent');
+  assert.match(String(schedule.event.user_data.fbc || ''), /SAVEDCLICK$/, 'the saved click id made it to Meta');
+  // and the booking metadata (already key by key) agrees
+  assert.strictEqual(calBookingPosts[0].metadata.fbclid, 'SAVEDCLICK');
+  assert.strictEqual(calBookingPosts[0].metadata.utm_campaign, 'new-campaign');
+});
+
 test('8.3: someone who books through the form (same visit) gets no nudge and no alert', async () => {
   reset();
   const body = lead({ email: 'neha@example.com', name: 'Neha Iyer' });
