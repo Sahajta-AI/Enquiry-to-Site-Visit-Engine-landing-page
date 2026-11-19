@@ -299,6 +299,8 @@ test('logs: emails, phone numbers and quoted values are masked; alert subjects l
   assert.strictEqual(logsafe.subjectOnly('Meet link missing: Asha Rao'), 'Meet link missing');
   assert.strictEqual(logsafe.subjectOnly('Didn’t book: Asha Rao, Rao Estates'), 'Didn’t book');
   assert.strictEqual(logsafe.safe('Cal.com booking lookup failed: 500'), 'Cal.com booking lookup failed: 500');
+  assert.strictEqual(logsafe.maskCode('Ab3dEf9hIj2kLm5nOp7qRs'), 'Ab3d…');
+  assert.strictEqual(logsafe.maskCode(''), '-');
 });
 
 test('reschedule pop-up: the booking page path comes from CAL_BOOKING_PAGE (a full cal.com address works too)', async () => {

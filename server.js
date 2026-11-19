@@ -613,7 +613,7 @@ app.post('/api/submit-lead', async (req, res) => {
           googleMeetUrl = calData.data?.videoCallUrl || calData.data?.location || null;
           bookingUid = calData.data?.uid || null;
           rescheduleUrl = bookingUid ? `https://cal.com/reschedule/${encodeURIComponent(bookingUid)}` : null;
-          console.log(`✅ [Cal.com booking]: created, uid ${bookingUid || '-'}`);
+          console.log(`✅ [Cal.com booking]: created, uid ${logsafe.maskCode(bookingUid)}`);
         } else {
           console.warn('⚠️ [Cal.com booking refused]: status', calRes.status);
         }
