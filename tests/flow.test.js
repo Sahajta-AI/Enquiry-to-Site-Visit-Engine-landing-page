@@ -36,6 +36,8 @@ let calMode = 'ok';        // 'ok' | 'refuse' | 'timeout'
 let slotsMode = 'ok';      // 'ok' | 'fail'
 const threads = {};        // threadId -> message ids
 const calStatus = {};      // uid -> status
+const calEventType = {};   // uid -> event type id, when not the test event
+const rescheduleCalls = []; const takenStarts = [];
 const calStart = {};       // uid -> start time, when it differs from the webhook's
 const calByEmail = {};     // email -> [{createdAt,start,status}]
 let gmailFailures = 0;
@@ -73,7 +75,14 @@ global.fetch = async (url, opts) => {
   }
   if (/api\.cal\.com\/v2\/bookings\/[^?]+$/.test(url) && (opts.method || 'GET') === 'GET') {
     const uid = decodeURIComponent(url.split('/').pop());
-    return json({ data: { status: calStatus[uid] || 'accepted', start: calStart[uid] || '2026-11-11T10:35:00.000Z', meetingUrl: 'https://meet.google.com/live-link' } });
+    return json({ data: { status: calStatus[uid] || 'accepted', start: calStart[uid] || '2026-11-11T10:35:00.000Z', meetingUrl: 'https://meet.google.com/live-link', eventTypeId: calEventType[uid] || 7785231 } });
+  }
+  if (/api\.cal\.com\/v2\/bookings\/[^/?]+\/reschedule$/.test(url) && opts.method === 'POST') {
+    const uid = decodeURIComponent(url.split('/').slice(-2)[0]);
+    const body = JSON.parse(opts.body);
+    rescheduleCalls.push({ uid, start: body.start });
+    if (takenStarts.includes(body.start)) return json({ error: 'slot taken' }, 400);
+    return json({ status: 'success', data: { uid: uid + '-moved', start: body.start } });
   }
   if (url.startsWith('https://api.cal.com/v2/bookings?')) {
     const email = decodeURIComponent(url.match(/attendeeEmail=([^&]+)/)[1]);
@@ -160,7 +169,7 @@ async function runQueue(until) {
     results.push((await r.json()).result);
   }
 }
-const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calStart)) delete calStart[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; publishDown = false; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; };
+const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calEventType)) delete calEventType[k]; rescheduleCalls.length = 0; takenStarts.length = 0; for (const k of Object.keys(calStart)) delete calStart[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; publishDown = false; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; };
 
 test('8.1: a booking sends the first email at once; the same webhook twice sends one; a wrong secret sends none', async () => {
   reset();
@@ -744,6 +753,34 @@ test('7.4 a bad time zone (or month) is refused with an error and sends no "Open
   assert.strictEqual(alertsSent.length, 0);
   // a real zone still works
   assert.strictEqual((await realFetch(base + '/api/available-slots?month=2026-11&timeZone=Asia/Dubai')).status, 200);
+});
+
+test('reschedule with our own picker: moves the booking through Cal.com; refuses a taken time, a cancelled booking, another event, a bad request', async () => {
+  reset();
+  // two days from now at 11:30 am IST, as the picker sends it
+  const day = new Date(Date.now() + 2 * 86400000 + 5.5 * 3600000).toISOString().slice(0, 10);
+  const startIso = new Date(day + 'T06:00:00.000Z').toISOString(); // 11:30 am IST
+  const body = (over) => Object.assign({ uid: 'bk-move', slotDate: day, slotTime: '11:30 AM', timezone: 'Asia/Kolkata' }, over || {});
+  const go = async (b) => { const r = await post('/api/reschedule', b); return { status: r.status, d: await r.json() }; };
+
+  const ok = await go(body());
+  assert.strictEqual(ok.status, 200);
+  assert.deepStrictEqual(ok.d, { ok: true, uid: 'bk-move-moved', start: startIso });
+  assert.deepStrictEqual(rescheduleCalls[0], { uid: 'bk-move', start: startIso });
+
+  takenStarts.push(startIso);
+  assert.deepStrictEqual((await go(body())).d, { ok: false, code: 'taken' });
+  takenStarts.length = 0;
+
+  calStatus['bk-gone'] = 'cancelled';
+  assert.strictEqual((await go(body({ uid: 'bk-gone' }))).d.code, 'not-booked');
+  calEventType['bk-other'] = 999;
+  assert.strictEqual((await go(body({ uid: 'bk-other' }))).d.code, 'not-found');
+  assert.strictEqual((await go(body({ uid: 'x' }))).status, 400);
+  assert.strictEqual((await go(body({ slotTime: 'soon' }))).status, 400);
+  assert.strictEqual((await go(body({ slotDate: '2020-01-01' }))).d.code, 'time');
+  assert.strictEqual((await post('/api/reschedule', body(), { Origin: 'https://evil.example' })).status, 403);
+  assert.strictEqual(rescheduleCalls.length, 2, 'only the two real attempts reached Cal.com');
 });
 
 test('4 Origin: the live address, the boss\'s address and preview addresses are allowed; other sites are not', async () => {

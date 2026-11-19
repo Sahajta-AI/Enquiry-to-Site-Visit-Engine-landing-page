@@ -371,20 +371,6 @@
     video.load();
   }
 
-  // ---------- Reschedule: a pop-up on our page (Cal.com's own embed, in reschedule mode), not Cal.com's site ----------
-  // If the embed can't load, the link simply opens Cal.com's reschedule page as before.
-  var calLoading = null;
-  function loadCalEmbed() {
-    if (calLoading) return calLoading;
-    calLoading = new Promise(function (resolve, reject) {
-      // Cal.com's standard loader: queues calls until embed.js has loaded
-      (function (C, A, L) { var p = function (a, ar) { a.q.push(ar); }; var d = C.document; C.Cal = C.Cal || function () { var cal = C.Cal; var ar = arguments; if (!cal.loaded) { cal.ns = {}; cal.q = cal.q || []; var s = d.createElement('script'); s.src = A; s.async = true; s.onload = function () { resolve(); }; s.onerror = function () { reject(new Error('embed')); }; d.head.appendChild(s); cal.loaded = true; } if (ar[0] === L) { var api = function () { p(api, arguments); }; var namespace = ar[1]; api.q = api.q || []; if (typeof namespace === 'string') { cal.ns[namespace] = cal.ns[namespace] || api; p(cal.ns[namespace], ar); p(cal, ['initNamespace', namespace]); } else p(cal, ar); return; } p(cal, ar); }; })(window, 'https://app.cal.com/embed/embed.js', 'init');
-      window.Cal('init', 'resched', { origin: 'https://cal.com' });
-      setTimeout(function () { reject(new Error('timeout')); }, 8000);
-    });
-    return calLoading;
-  }
-
   // The new time from Cal.com, in the booking's own zone: "2026-11-21" and "10:30 AM", as the page keeps them
   function slotInZone(iso, tz) {
     var parts = {};
@@ -406,21 +392,184 @@
     wireButtonLinksOnly();
   }
 
+  // ---------- Reschedule: our own time picker in a pop-up (the booking form's design), Cal.com moves the booking ----------
+  var RS = { year: 0, month: 0, selected: null, time: null, cache: {}, busy: false, error: '', fallback: false, opener: null };
+  var MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  var pad2 = function (n) { return (n < 10 ? '0' : '') + n; };
+  var esc = function (v) { return String(v).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+
+  function rsUid() {
+    var m = String((booking && booking.rescheduleUrl) || '').match(/^https:\/\/cal\.com\/reschedule\/([^/?#]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  function rsWhen(slotDate, slotTime) {
+    var dp = dateParts(slotDate);
+    return dp.weekday.slice(0, 3) + ', ' + dp.day + ' ' + dp.month.slice(0, 3) + ' at ' + formatTime(slotTime) + ' ' + zoneLabel(booking.timezone);
+  }
+
+  function rsMonth(year, month) {
+    var key = year + '-' + pad2(month + 1);
+    if (RS.cache[key]) return Promise.resolve(RS.cache[key]);
+    return fetch('/api/available-slots?month=' + key + '&timeZone=' + encodeURIComponent(booking.timezone || 'Asia/Kolkata'))
+      .then(function (r) { if (!r.ok) throw new Error('slots'); return r.json(); })
+      .then(function (d) {
+        // The current time is not offered as a "new" time
+        var data = { availableDates: [], slotsByDate: {} };
+        (d.availableDates || []).forEach(function (day) {
+          var times = (d.slotsByDate[day] || []).filter(function (tm) { return !(day === booking.slotDate && tm === booking.slotTime); });
+          if (times.length) { data.availableDates.push(day); data.slotsByDate[day] = times; }
+        });
+        RS.cache[key] = data;
+        return data;
+      });
+  }
+
+  function rsRender() {
+    var box = $('rs-picker');
+    box.innerHTML = '<p class="cal-status">Finding open times…</p>';
+    rsMonth(RS.year, RS.month).then(function (data) {
+      var days = data.availableDates;
+      if (!RS.selected || days.indexOf(RS.selected) < 0) RS.selected = days[0] || null;
+      var times = RS.selected ? data.slotsByDate[RS.selected] : [];
+      if (!RS.time || times.indexOf(RS.time) < 0) RS.time = times[0] || null;
+
+      var first = new Date(RS.year, RS.month, 1).getDay();
+      var count = new Date(RS.year, RS.month + 1, 0).getDate();
+      var prevCount = new Date(RS.year, RS.month, 0).getDate();
+      var cells = [];
+      for (var i = first - 1; i >= 0; i--) cells.push('<div class="cal-day-cell other-month">' + (prevCount - i) + '</div>');
+      for (var d = 1; d <= count; d++) {
+        var key = RS.year + '-' + pad2(RS.month + 1) + '-' + pad2(d);
+        if (days.indexOf(key) < 0) { cells.push('<div class="cal-day-cell disabled">' + d + '</div>'); continue; }
+        var on = key === RS.selected;
+        cells.push('<button type="button" class="cal-day-cell available' + (on ? ' selected' : '') + '" data-date="' + key + '" aria-pressed="' + on + '" aria-label="' + MONTH_NAMES[RS.month] + ' ' + d + '">' + d + '</button>');
+      }
+      for (var n = 1, rest = (cells.length > 35 ? 42 : 35) - cells.length; n <= rest; n++) cells.push('<div class="cal-day-cell other-month">' + n + '</div>');
+
+      var slotBtn = function (tm) {
+        var on = tm === RS.time;
+        return '<button type="button" class="time-slot-btn' + (on ? ' selected' : '') + '" data-time="' + esc(tm) + '" aria-pressed="' + on + '">' + esc(tm) + '</button>';
+      };
+      var am = times.filter(function (tm) { return /\bam$/i.test(tm.trim()); });
+      var pm = times.filter(function (tm) { return am.indexOf(tm) < 0; });
+      var slots = times.length
+        ? (am.length ? '<div class="time-section-label">Morning</div><div class="time-slots-grid">' + am.map(slotBtn).join('') + '</div>' : '') +
+          (pm.length ? '<div class="time-section-label">Afternoon and evening</div><div class="time-slots-grid">' + pm.map(slotBtn).join('') + '</div>' : '')
+        : '<p class="cal-status">No open times this month.</p>';
+
+      var picked = RS.selected && RS.time ? rsWhen(RS.selected, RS.time) : '';
+      box.innerHTML =
+        (RS.error ? '<p class="cal-error" role="alert">' + esc(RS.error) +
+          (RS.fallback ? ' <a class="rs-fallback" href="' + esc(booking.rescheduleUrl) + '">Reschedule on Cal.com instead</a>' : '') + '</p>' : '') +
+        '<div class="month-calendar-wrapper"><div class="cal-layout-row"><div>' +
+          '<div class="month-nav-header">' +
+            '<button type="button" class="month-nav-btn" id="rs-prev" aria-label="Previous month"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M11 3L5 9l6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' +
+            '<div class="month-title">' + MONTH_NAMES[RS.month] + ' ' + RS.year + '</div>' +
+            '<button type="button" class="month-nav-btn" id="rs-next" aria-label="Next month"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M7 3l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' +
+          '</div>' +
+          '<div class="calendar-weekdays-grid"><div>SUN</div><div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div></div>' +
+          '<div class="calendar-days-grid">' + cells.join('') + '</div>' +
+        '</div><div class="time-slots-container">' + slots + '</div></div>' +
+        '<div class="slot-summary-box"><div class="selected-slot-badge">' + esc(picked) + '</div>' +
+          '<button type="button" class="btn-primary" id="rs-confirm"' + (picked && !RS.busy ? '' : ' disabled') + '>' + (RS.busy ? 'Moving your call…' : 'Move my call to this time') + '</button></div></div>';
+
+      $('rs-prev').addEventListener('click', function () { rsShift(-1); });
+      $('rs-next').addEventListener('click', function () { rsShift(1); });
+      Array.prototype.forEach.call(box.querySelectorAll('.cal-day-cell.available'), function (b) {
+        b.addEventListener('click', function () { RS.selected = b.getAttribute('data-date'); RS.time = null; RS.error = ''; rsRender(); });
+      });
+      Array.prototype.forEach.call(box.querySelectorAll('.time-slot-btn'), function (b) {
+        b.addEventListener('click', function () { RS.time = b.getAttribute('data-time'); RS.error = ''; rsRender(); });
+      });
+      $('rs-confirm').addEventListener('click', rsConfirm);
+    }).catch(function () {
+      box.innerHTML = '<div class="cal-status"><p>We couldn’t load open times. Please check your connection and try again.</p>' +
+        '<button type="button" class="cal-retry" id="rs-retry">Try again</button><br>' +
+        '<a class="rs-fallback" href="' + esc(booking.rescheduleUrl) + '">Or reschedule on Cal.com</a></div>';
+      $('rs-retry').addEventListener('click', rsRender);
+    });
+  }
+
+  function rsShift(delta) {
+    RS.month += delta;
+    if (RS.month < 0) { RS.month = 11; RS.year--; }
+    if (RS.month > 11) { RS.month = 0; RS.year++; }
+    RS.selected = null; RS.time = null; RS.error = '';
+    rsRender();
+  }
+
+  function rsConfirm() {
+    if (RS.busy || !RS.selected || !RS.time) return;
+    RS.busy = true; RS.error = ''; RS.fallback = false; rsRender();
+    var from = rsWhen(booking.slotDate, booking.slotTime);
+    fetch('/api/reschedule', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid: rsUid(), slotDate: RS.selected, slotTime: RS.time, timezone: booking.timezone || 'Asia/Kolkata' })
+    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d || {} }; }); })
+      .then(function (res) {
+        RS.busy = false;
+        if (!res.ok || !res.d.ok) {
+          // Cal.com's own page is the fallback whenever ours can't move the call (a taken time just needs another pick)
+          RS.fallback = res.d.code !== 'taken';
+          RS.error = res.d.code === 'taken' ? 'That time was just taken. Please pick another time.'
+            : res.d.code === 'not-booked' ? 'This booking can no longer be moved here. Please use the link in your email.'
+            : 'We couldn’t move your call. Please try again.';
+          RS.cache = {}; // fresh times after a refusal
+          rsRender();
+          return;
+        }
+        track('Rescheduled');
+        onRescheduled({ startTime: res.d.start, uid: res.d.uid });
+        var to = rsWhen(booking.slotDate, booking.slotTime);
+        $('rs-current').textContent = '';
+        $('rs-tz').textContent = '';
+        $('rs-title').hidden = true;
+        $('rs-picker').innerHTML = '<div class="rs-done"><p class="rs-done-title">Your call is moved.</p>' +
+          '<p>From <s>' + esc(from) + '</s><br>to <strong>' + esc(to) + '</strong>.<br>Cal.com is emailing you the new invite.</p>' +
+          '<button type="button" class="btn-primary" id="rs-done-close">Done</button></div>';
+        $('rs-done-close').addEventListener('click', rsClose);
+      })
+      .catch(function () { RS.busy = false; RS.fallback = true; RS.error = 'We couldn’t move your call. Please check your connection and try again.'; rsRender(); });
+  }
+
+  function rsOpen(opener) {
+    RS.opener = opener || null;
+    $('rs-title').hidden = false;
+    var p = booking.slotDate.split('-').map(Number);
+    RS.year = p[0]; RS.month = p[1] - 1; RS.selected = null; RS.time = null; RS.error = ''; RS.fallback = false; RS.cache = {};
+    $('rs-tz').textContent = isIndia(booking.timezone) ? 'Times are in India time (IST).' : 'Times are in your time zone (' + zoneLabel(booking.timezone).replace(/ time$/, '') + ').';
+    $('rs-current').innerHTML = 'Currently booked for <strong>' + esc(rsWhen(booking.slotDate, booking.slotTime)) + '</strong>';
+    var modal = $('rs-modal');
+    modal.hidden = false;
+    // next frame, so the fade-in runs
+    requestAnimationFrame(function () { modal.classList.add('active'); });
+    document.body.classList.add('modal-open');
+    rsRender();
+    setTimeout(function () { var c = $('rs-close'); if (c) c.focus(); }, 50);
+  }
+
+  function rsClose() {
+    var modal = $('rs-modal');
+    modal.classList.remove('active');
+    document.body.classList.remove('modal-open');
+    setTimeout(function () { modal.hidden = true; }, 250);
+    if (RS.opener && RS.opener.focus) RS.opener.focus();
+  }
+
   function wireReschedule() {
     var link = $('ty-resched-link');
-    if (!link) return;
+    var modal = $('rs-modal');
+    if (!link || !modal) return;
     link.addEventListener('click', function (e) {
-      var href = link.getAttribute('href') || '';
-      var m = href.match(/^https:\/\/cal\.com\/reschedule\/([^/?#]+)/);
-      if (!m || !settings.calBookingPage) return; // no pop-up possible: the link opens Cal.com as before
+      if (!booking || !rsUid()) return; // no booking id: the link opens Cal.com as before
       e.preventDefault();
       track('RescheduleOpen');
-      loadCalEmbed().then(function () {
-        var cal = window.Cal.ns.resched;
-        cal('on', { action: 'rescheduleBookingSuccessfulV2', callback: function (ev) { onRescheduled(ev && ev.detail && ev.detail.data); } });
-        cal('modal', { calLink: settings.calBookingPage, config: { rescheduleUid: decodeURIComponent(m[1]), layout: 'month_view', theme: 'light' } });
-      }).catch(function () { window.location.href = href; });
+      rsOpen(link);
     });
+    $('rs-close').addEventListener('click', rsClose);
+    modal.addEventListener('click', function (e) { if (e.target === modal && !RS.busy) rsClose(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !modal.hidden && !RS.busy) rsClose(); });
   }
 
   // ---------- Go ----------

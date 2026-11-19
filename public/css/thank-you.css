@@ -701,3 +701,12 @@ body.ty {
   .ty-tick-pulse { animation: none; opacity: 0; } /* motion turned off: the tick stays still */
   html.ty-html { scroll-behavior: auto; }
 }
+
+/* Reschedule picker: the booking form's pop-up and picker (main.css), plus the current time and the done screen */
+#rs-modal[hidden] { display: none; }
+.rs-current { margin: -0.5rem 0 1.1rem; font-size: 0.9375rem; color: var(--ink-mute); }
+.rs-current s { color: var(--ink-soft); }
+.rs-done { text-align: center; padding: 1.5rem 0.5rem 0.5rem; }
+.rs-done-title { font-family: var(--font-heading); font-size: 1.35rem; font-weight: 700; margin-bottom: 0.5rem; }
+.rs-done p { color: var(--ink-soft); margin-bottom: 1.25rem; }
+.rs-fallback { display: inline-block; margin-top: 0.75rem; color: var(--green); font-weight: 600; text-decoration: underline; text-underline-offset: 4px; }

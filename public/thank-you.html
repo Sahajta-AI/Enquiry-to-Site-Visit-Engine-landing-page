@@ -24,7 +24,7 @@
   <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/syne-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/main.css?v=2.10.4">
-  <link rel="stylesheet" href="/css/thank-you.css?v=1.0.6">
+  <link rel="stylesheet" href="/css/thank-you.css?v=1.0.7">
 
   <!-- The Meta Pixel loads from /js/sv-core.js once /api/config replies (PageView only; Schedule fires in the booking form, never here) -->
 </head>
@@ -204,6 +204,26 @@
   </footer>
 
   <script src="/js/sv-core.js?v=1.0.1" defer></script>
-  <script src="/js/thank-you.js?v=1.0.13" defer></script>
+  <!-- Reschedule: our own time picker (the same design as the booking form) -->
+  <div class="modal-backdrop" id="rs-modal" role="dialog" aria-modal="true" aria-labelledby="rs-title" hidden>
+    <div class="modal-container is-time-step">
+      <div class="modal-header">
+        <div class="modal-header-row">
+          <span class="step-pill">Reschedule</span>
+          <button type="button" class="modal-close-btn" id="rs-close" aria-label="Close">
+            <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <h3 class="wizard-question-title" id="rs-title">Pick a new time for your 45-minute Lead Conversion Clarity Call</h3>
+        <p class="tz-line" id="rs-tz"></p>
+        <p class="rs-current" id="rs-current"></p>
+        <div id="rs-picker" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/thank-you.js?v=1.1.0" defer></script>
 </body>
 </html>

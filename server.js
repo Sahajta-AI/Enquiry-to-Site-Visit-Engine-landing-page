@@ -230,6 +230,39 @@ app.post('/api/resume', async (req, res) => {
 });
 
 // Cal.com's "Booking Created" webhook (set on the Lead Conversion Clarity Call event only)
+// Reschedule with our own time picker on the thank-you page. The booking's uid (in its reschedule link) is what
+// lets someone move it, exactly as Cal.com's own reschedule link works. Checks: our event, still booked, in the
+// future, and a new time within the same window as booking (Cal.com checks the time is free).
+app.post('/api/reschedule', async (req, res) => {
+  if (!lleads.originAllowed(req)) return res.status(403).json({ ok: false, code: 'origin' });
+  const b = req.body || {};
+  const uid = String(b.uid || '');
+  const tz = ltime.isValidTimeZone(b.timezone) ? b.timezone : 'Asia/Kolkata';
+  const m = String(b.slotTime || '').match(/^\s*(\d{1,2}):(\d{2})\s*(AM|PM)\s*$/i);
+  if (!/^[A-Za-z0-9_-]{6,64}$/.test(uid) || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.slotDate || '')) || !m) {
+    return res.status(400).json({ ok: false, code: 'invalid' });
+  }
+  if (!lcal.configured()) return res.status(503).json({ ok: false, code: 'unavailable' });
+  let hours = parseInt(m[1], 10) % 12;
+  if (m[3].toUpperCase() === 'PM') hours += 12;
+  const start = ltime.zonedTimeToUtc(b.slotDate, hours, parseInt(m[2], 10), tz);
+  if (start.getTime() <= Date.now() || start.getTime() > Date.now() + 8 * 86400000) {
+    return res.status(400).json({ ok: false, code: 'time' });
+  }
+  try {
+    const cur = await lcal.bookingForMove(uid);
+    if (!cur || cur.eventTypeId !== lcfg.eventTypeId()) return res.status(404).json({ ok: false, code: 'not-found' });
+    if (cur.status !== 'accepted') return res.status(409).json({ ok: false, code: 'not-booked' });
+    if (cur.start && new Date(cur.start).getTime() === start.getTime()) return res.status(400).json({ ok: false, code: 'same-time' });
+    const out = await lcal.rescheduleBooking(uid, start.toISOString());
+    if (!out.ok) return res.status(out.status === 400 || out.status === 409 ? 409 : 502).json({ ok: false, code: out.status === 400 || out.status === 409 ? 'taken' : 'failed' });
+    res.json({ ok: true, uid: out.uid, start: out.start });
+  } catch (err) {
+    console.error('❌ [/api/reschedule]:', logsafe.safe(err.message));
+    res.status(502).json({ ok: false, code: 'failed' });
+  }
+});
+
 app.post('/api/cal-webhook', async (req, res) => {
   const secret = process.env.CAL_WEBHOOK_SECRET;
   if (!secret) return res.status(503).json({ ok: false, error: 'CAL_WEBHOOK_SECRET is not set' });
