@@ -387,6 +387,8 @@
     booking.slotDate = slot.slotDate;
     booking.slotTime = slot.slotTime;
     if (uid) booking.rescheduleUrl = 'https://cal.com/reschedule/' + encodeURIComponent(uid);
+    // No new uid: the old link points at the cancelled booking, so drop it (the new invite email has the right one)
+    else if (data && data.fromPicker) booking.rescheduleUrl = null;
     try { sessionStorage.setItem('sv_booked', JSON.stringify(booking)); } catch (e) {}
     renderTop();
     wireButtonLinksOnly();
@@ -502,6 +504,7 @@
   function rsConfirm() {
     if (RS.busy || !RS.selected || !RS.time) return;
     RS.busy = true; RS.error = ''; RS.fallback = false; rsRender();
+    $('rs-close').disabled = true;
     var from = rsWhen(booking.slotDate, booking.slotTime);
     fetch('/api/reschedule', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -509,18 +512,21 @@
     }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d || {} }; }); })
       .then(function (res) {
         RS.busy = false;
+        $('rs-close').disabled = false;
         if (!res.ok || !res.d.ok) {
           // Cal.com's own page is the fallback whenever ours can't move the call (a taken time just needs another pick)
           RS.fallback = res.d.code !== 'taken';
           RS.error = res.d.code === 'taken' ? 'That time was just taken. Please pick another time.'
             : res.d.code === 'not-booked' ? 'This booking can no longer be moved here. Please use the link in your email.'
+            : res.d.code === 'past' ? 'This call’s time has already passed, so it can’t be moved here.'
+            : res.d.code === 'too-many' ? 'Too many tries. Please wait a few minutes, or use the link below.'
             : 'We couldn’t move your call. Please try again.';
           RS.cache = {}; // fresh times after a refusal
           rsRender();
           return;
         }
         track('Rescheduled');
-        onRescheduled({ startTime: res.d.start, uid: res.d.uid });
+        onRescheduled({ startTime: res.d.start, uid: res.d.uid, fromPicker: true });
         var to = rsWhen(booking.slotDate, booking.slotTime);
         $('rs-current').textContent = '';
         $('rs-tz').textContent = '';
@@ -530,7 +536,7 @@
           '<button type="button" class="btn-primary" id="rs-done-close">Done</button></div>';
         $('rs-done-close').addEventListener('click', rsClose);
       })
-      .catch(function () { RS.busy = false; RS.fallback = true; RS.error = 'We couldn’t move your call. Please check your connection and try again.'; rsRender(); });
+      .catch(function () { RS.busy = false; $('rs-close').disabled = false; RS.fallback = true; RS.error = 'We couldn’t move your call. Please check your connection and try again.'; rsRender(); });
   }
 
   function rsOpen(opener) {
@@ -567,7 +573,7 @@
       track('RescheduleOpen');
       rsOpen(link);
     });
-    $('rs-close').addEventListener('click', rsClose);
+    $('rs-close').addEventListener('click', function () { if (!RS.busy) rsClose(); }); // never while a move is running
     modal.addEventListener('click', function (e) { if (e.target === modal && !RS.busy) rsClose(); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !modal.hidden && !RS.busy) rsClose(); });
   }

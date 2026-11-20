@@ -235,10 +235,14 @@ app.post('/api/resume', async (req, res) => {
 // future, and a new time within the same window as booking (Cal.com checks the time is free).
 app.post('/api/reschedule', async (req, res) => {
   if (!lleads.originAllowed(req)) return res.status(403).json({ ok: false, code: 'origin' });
+  // A light limit: 20 tries per address every 10 minutes (kept in the store, so every copy of the function shares it)
+  const tries = await lstore.incr('resched-ip:' + (lmeta.clientIp(req) || 'unknown'), 10 * 60).catch(() => 1);
+  if (tries > 20) return res.status(429).json({ ok: false, code: 'too-many' });
   const b = req.body || {};
   const uid = String(b.uid || '');
   const tz = ltime.isValidTimeZone(b.timezone) ? b.timezone : 'Asia/Kolkata';
-  const m = String(b.slotTime || '').match(/^\s*(\d{1,2}):(\d{2})\s*(AM|PM)\s*$/i);
+  // Only real times: hour 1 to 12, minutes 00 to 59
+  const m = String(b.slotTime || '').match(/^\s*(0?[1-9]|1[0-2]):([0-5]\d)\s*(AM|PM)\s*$/i);
   if (!/^[A-Za-z0-9_-]{6,64}$/.test(uid) || !/^\d{4}-\d{2}-\d{2}$/.test(String(b.slotDate || '')) || !m) {
     return res.status(400).json({ ok: false, code: 'invalid' });
   }
@@ -253,10 +257,20 @@ app.post('/api/reschedule', async (req, res) => {
     const cur = await lcal.bookingForMove(uid);
     if (!cur || cur.eventTypeId !== lcfg.eventTypeId()) return res.status(404).json({ ok: false, code: 'not-found' });
     if (cur.status !== 'accepted') return res.status(409).json({ ok: false, code: 'not-booked' });
-    if (cur.start && new Date(cur.start).getTime() === start.getTime()) return res.status(400).json({ ok: false, code: 'same-time' });
+    // A call that already started (or happened) can't be moved
+    if (!cur.start || new Date(cur.start).getTime() <= Date.now()) return res.status(409).json({ ok: false, code: 'past' });
+    if (new Date(cur.start).getTime() === start.getTime()) return res.status(400).json({ ok: false, code: 'same-time' });
     const out = await lcal.rescheduleBooking(uid, start.toISOString());
-    if (!out.ok) return res.status(out.status === 400 || out.status === 409 ? 409 : 502).json({ ok: false, code: out.status === 400 || out.status === 409 ? 'taken' : 'failed' });
-    res.json({ ok: true, uid: out.uid, start: out.start });
+    if (!out.ok) {
+      // "Taken" only when the time really is no longer open; any other refusal gets the Cal.com link
+      const open = out.status === 400 || out.status === 409 ? await lcal.isSlotOpen(start.getTime()).catch(() => null) : null;
+      if (open === false) return res.status(409).json({ ok: false, code: 'taken' });
+      console.warn('⚠️ [/api/reschedule]: Cal.com refused the move, status', out.status);
+      return res.status(502).json({ ok: false, code: 'failed' });
+    }
+    // Cal.com gave no new uid: look the new booking up (the old uid now points at a cancelled booking)
+    const newUid = out.uid || await lcal.findMovedUid(uid, start.getTime()).catch(() => '');
+    res.json({ ok: true, uid: newUid || null, start: out.start });
   } catch (err) {
     console.error('❌ [/api/reschedule]:', logsafe.safe(err.message));
     res.status(502).json({ ok: false, code: 'failed' });

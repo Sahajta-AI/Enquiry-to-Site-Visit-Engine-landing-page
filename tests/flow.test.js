@@ -37,7 +37,7 @@ let slotsMode = 'ok';      // 'ok' | 'fail'
 const threads = {};        // threadId -> message ids
 const calStatus = {};      // uid -> status
 const calEventType = {};   // uid -> event type id, when not the test event
-const rescheduleCalls = []; const takenStarts = [];
+const rescheduleCalls = []; const takenStarts = []; const refuseStarts = []; let noNewUid = false;
 const calStart = {};       // uid -> start time, when it differs from the webhook's
 const calByEmail = {};     // email -> [{createdAt,start,status}]
 let gmailFailures = 0;
@@ -75,14 +75,14 @@ global.fetch = async (url, opts) => {
   }
   if (/api\.cal\.com\/v2\/bookings\/[^?]+$/.test(url) && (opts.method || 'GET') === 'GET') {
     const uid = decodeURIComponent(url.split('/').pop());
-    return json({ data: { status: calStatus[uid] || 'accepted', start: calStart[uid] || '2026-11-11T10:35:00.000Z', meetingUrl: 'https://meet.google.com/live-link', eventTypeId: calEventType[uid] || 7785231 } });
+    return json({ data: { status: calStatus[uid] || 'accepted', start: calStart[uid] || '2026-11-11T10:35:00.000Z', meetingUrl: 'https://meet.google.com/live-link', eventTypeId: calEventType[uid] || 7785231, ...(uid === 'bk-move' ? { attendees: [{ email: 'move@example.com' }] } : {}) } });
   }
   if (/api\.cal\.com\/v2\/bookings\/[^/?]+\/reschedule$/.test(url) && opts.method === 'POST') {
     const uid = decodeURIComponent(url.split('/').slice(-2)[0]);
     const body = JSON.parse(opts.body);
     rescheduleCalls.push({ uid, start: body.start });
-    if (takenStarts.includes(body.start)) return json({ error: 'slot taken' }, 400);
-    return json({ status: 'success', data: { uid: uid + '-moved', start: body.start } });
+    if (takenStarts.includes(body.start) || refuseStarts.includes(body.start)) return json({ error: 'refused' }, 400);
+    return json({ status: 'success', data: { uid: noNewUid ? '' : uid + '-moved', start: body.start } });
   }
   if (url.startsWith('https://api.cal.com/v2/bookings?')) {
     const email = decodeURIComponent(url.match(/attendeeEmail=([^&]+)/)[1]);
@@ -93,6 +93,11 @@ global.fetch = async (url, opts) => {
     const body = JSON.parse(opts.body);
     metaCalls.push({ url, body, event: body.data[0] });
     return json({ events_received: 1, messages: [], fbtrace_id: 'trace1' });
+  }
+  if (url.startsWith('https://api.cal.com/v2/slots/available') && /startTime=[^&]*T\d\d:\d\d:00\.000Z&endTime=[^&]*&eventTypeId=\d+$/.test(url) && refuseStarts.length + takenStarts.length) {
+    // the exact-time check after a refused move: a refused (not taken) time is still open
+    const mid = new Date(new Date(url.match(/startTime=([^&]+)/)[1]).getTime() + 60000).toISOString();
+    return json({ data: { slots: refuseStarts.includes(mid) ? { d: [{ time: mid }] } : {} } });
   }
   if (url.startsWith('https://api.cal.com/v2/slots/available')) {
     if (slotsMode === 'fail') return json({ error: 'down' }, 500);
@@ -169,7 +174,7 @@ async function runQueue(until) {
     results.push((await r.json()).result);
   }
 }
-const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calEventType)) delete calEventType[k]; rescheduleCalls.length = 0; takenStarts.length = 0; for (const k of Object.keys(calStart)) delete calStart[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; publishDown = false; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; };
+const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calEventType)) delete calEventType[k]; rescheduleCalls.length = 0; takenStarts.length = 0; refuseStarts.length = 0; noNewUid = false; for (const k of Object.keys(calStart)) delete calStart[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; publishDown = false; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; };
 
 test('8.1: a booking sends the first email at once; the same webhook twice sends one; a wrong secret sends none', async () => {
   reset();
@@ -817,6 +822,8 @@ test('reschedule with our own picker: moves the booking through Cal.com; refuses
   const startIso = new Date(day + 'T06:00:00.000Z').toISOString(); // 11:30 am IST
   const body = (over) => Object.assign({ uid: 'bk-move', slotDate: day, slotTime: '11:30 AM', timezone: 'Asia/Kolkata' }, over || {});
   const go = async (b) => { const r = await post('/api/reschedule', b); return { status: r.status, d: await r.json() }; };
+  const soon = new Date(Date.now() + 86400000).toISOString();
+  for (const u of ['bk-move', 'bk-gone', 'bk-other']) calStart[u] = soon; // the current calls are tomorrow
 
   const ok = await go(body());
   assert.strictEqual(ok.status, 200);
@@ -836,6 +843,25 @@ test('reschedule with our own picker: moves the booking through Cal.com; refuses
   assert.strictEqual((await go(body({ slotDate: '2020-01-01' }))).d.code, 'time');
   assert.strictEqual((await post('/api/reschedule', body(), { Origin: 'https://evil.example' })).status, 403);
   assert.strictEqual(rescheduleCalls.length, 2, 'only the two real attempts reached Cal.com');
+
+  // not real times
+  for (const t of ['0:30 AM', '11:99 AM', '13:00 PM', '11:60 AM']) assert.strictEqual((await go(body({ slotTime: t }))).d.code, 'invalid', t);
+  // a call that already happened can't be moved
+  calStart['bk-old'] = new Date(Date.now() - 3600000).toISOString();
+  assert.strictEqual((await go(body({ uid: 'bk-old' }))).d.code, 'past');
+  // Cal.com refuses but the time is still open: not "taken", so the page shows the Cal.com link
+  refuseStarts.push(startIso);
+  assert.deepStrictEqual((await go(body())).d, { ok: false, code: 'failed' });
+  refuseStarts.length = 0;
+  // no new uid from Cal.com: looked up again by the attendee's email
+  noNewUid = true;
+  calByEmail['move@example.com'] = [{ uid: 'bk-move', start: soon, status: 'cancelled' }, { uid: 'bk-move-found', start: startIso, status: 'accepted' }];
+  assert.deepStrictEqual((await go(body())).d, { ok: true, uid: 'bk-move-found', start: startIso });
+  noNewUid = false;
+  // a light rate limit per address
+  let last;
+  for (let i = 0; i < 25; i++) last = await go(body({ slotTime: 'bad' }));
+  assert.strictEqual(last.status, 429);
 });
 
 test('4 Origin: the live address, the boss\'s address and preview addresses are allowed; other sites are not', async () => {
