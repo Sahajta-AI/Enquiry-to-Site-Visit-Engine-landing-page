@@ -41,6 +41,7 @@ const rescheduleCalls = []; const takenStarts = []; const refuseStarts = []; let
 const calStart = {};       // uid -> start time, when it differs from the webhook's
 const calByEmail = {};     // email -> [{createdAt,start,status}]
 let gmailFailures = 0;
+let gmailLateReply = false;
 let n = 0;
 const json = (o, status) => new Response(JSON.stringify(o), { status: status || 200, headers: { 'content-type': 'application/json' } });
 
@@ -63,6 +64,7 @@ global.fetch = async (url, opts) => {
     const threadId = body.threadId || 't' + n;
     (threads[threadId] = threads[threadId] || []).push(id);
     sent.push({ id, threadId, to: header('To'), subject: header('Subject'), inReplyTo: header('In-Reply-To'), from: header('From'), text: dec(parts[1]), html: dec(parts[2]) });
+    if (gmailLateReply) { gmailLateReply = false; throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); } // sent, but the answer came too late
     return json({ id, threadId });
   }
   if (/\/messages\/m\d+\?format=metadata/.test(url)) {
@@ -174,7 +176,7 @@ async function runQueue(until) {
     results.push((await r.json()).result);
   }
 }
-const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calEventType)) delete calEventType[k]; rescheduleCalls.length = 0; takenStarts.length = 0; refuseStarts.length = 0; noNewUid = false; for (const k of Object.keys(calStart)) delete calStart[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; publishDown = false; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; };
+const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calEventType)) delete calEventType[k]; rescheduleCalls.length = 0; takenStarts.length = 0; refuseStarts.length = 0; noNewUid = false; for (const k of Object.keys(calStart)) delete calStart[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; gmailLateReply = false; publishDown = false; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; };
 
 test('8.1: a booking sends the first email at once; the same webhook twice sends one; a wrong secret sends none', async () => {
   reset();
@@ -561,7 +563,7 @@ test('8.3: nudge 1 went but nudge 2 could not be queued: the retry never sends n
   assert.strictEqual(published.length, before + 1, 'nudge 2 is queued now');
 });
 
-test('8.3: nudge 1 went but saving "sent" failed: a retry never sends it again and Shubhang is asked to check; a Gmail failure still retries', async () => {
+test('8.3: nudge 1 went but saving "sent" failed: never sent again, and Shubhang is told nudge 2 is not queued', async () => {
   reset();
   const b = lead({ email: 'unsure@example.com', name: 'Uma Sen' });
   await post('/api/lead', b);
@@ -577,14 +579,16 @@ test('8.3: nudge 1 went but saving "sent" failed: a retry never sends it again a
   } finally { store.update = realUpdate; }
   assert.strictEqual(nudges().length, 1, 'Gmail sent it once');
   const code = nudges()[0].text.match(/\?r=([A-Za-z0-9_-]{22})/)[1];
-  // the retry
-  assert.strictEqual(await tasks.runTask('nudge1', code, 2), 'stopped:unsure');
-  assert.strictEqual(nudges().length, 1, 'never a second nudge 1');
-  const a = alertsSent.filter(x => /may not have gone/.test(x.subject));
+  const a = alertsSent.filter(x => /Nudge 2 not queued/.test(x.subject));
   assert.strictEqual(a.length, 1);
-  assert.match(a[0].text, /^Nudge email may not have gone: Uma Sen, Skyline Homes\. .*Check Sent in Gmail/);
+  assert.match(a[0].text, /^Nudge 2 not queued: Uma Sen, Skyline Homes\. Nudge 1 went, but saving that it went failed, so nudge 2 could not be queued\. If they haven’t booked or replied by tomorrow, WhatsApp them\.$/);
+  // no retry was queued; even a stray one never sends it again
+  assert.notStrictEqual(await tasks.runTask('nudge1', code, 2), 'sent');
+  await runQueue();
+  assert.strictEqual(nudges().length, 1, 'never a second nudge 1');
+  assert.strictEqual(alertsSent.filter(x => /may not have gone|Nudge email not sent/.test(x.subject)).length, 0, 'no wrong "unsure" or "not sent" alert');
 
-  // Gmail fails once: the claim is cleared, so the retry sends it (once)
+  // Gmail clearly fails once: the claim is cleared, so the retry sends it (once)
   reset();
   const b2 = lead({ email: 'retry@example.com', name: 'Ravi Nair' });
   await post('/api/lead', b2);
@@ -594,6 +598,48 @@ test('8.3: nudge 1 went but saving "sent" failed: a retry never sends it again a
   gmailFailures = 0;
   assert.strictEqual(sent.filter(e => e.to === 'retry@example.com' && /^One step left/.test(e.subject)).length, 1, 'sent on the retry, once');
   assert.strictEqual(alertsSent.length, 0);
+});
+
+test('8.3: Gmail sends nudge 1 but answers too late (timeout): the claim stays, the retry never sends it again, Shubhang is asked to check', async () => {
+  reset();
+  const b = lead({ email: 'late@example.com', name: 'Lata Iyer' });
+  await post('/api/lead', b);
+  await post('/api/lead-signal', { kind: 'didnt_book', lead_event_id: b.lead_event_id });
+  gmailLateReply = true;
+  await runQueue();
+  assert.strictEqual(sent.filter(e => e.to === 'late@example.com' && /One step left/.test(e.subject)).length, 1, 'only once');
+  const a = alertsSent.filter(x => /may not have gone/.test(x.subject));
+  assert.strictEqual(a.length, 1);
+  assert.match(a[0].text, /^Nudge email may not have gone: Lata Iyer, Skyline Homes\. .*Check Sent in Gmail; if it isn't there, WhatsApp them instead\. Nudge 2 was not queued either: if they haven’t booked or replied by tomorrow, WhatsApp them\.$/);
+});
+
+test('8.3: a lead who booked gets no "unsure" alert, even with a claim left from a lost Gmail answer', async () => {
+  reset();
+  const b = lead({ email: 'bookedlate@example.com', name: 'Bina Shah' });
+  await post('/api/lead', b);
+  await post('/api/lead-signal', { kind: 'didnt_book', lead_event_id: b.lead_event_id });
+  gmailLateReply = true;
+  const job = published.find(p => !p.ran); job.ran = true;
+  const raw = JSON.stringify({ jobId: job.jobId });
+  await post('/api/jobs/run', raw, { 'upstash-signature': qstashSig(raw) });
+  calByEmail['bookedlate@example.com'] = [{ createdAt: Date.now(), start: Date.now() + 86400000, status: 'accepted' }];
+  await runQueue();
+  assert.strictEqual(alertsSent.filter(x => /may not have gone/.test(x.subject)).length, 0, 'booked is checked first');
+  assert.strictEqual(sent.filter(e => e.to === 'bookedlate@example.com').length, 1);
+});
+
+test('8.3: Gmail clearly refused and clearing the claim also failed: reported as "not sent", never as "unsure"', async () => {
+  reset();
+  const b = lead({ email: 'stuck@example.com', name: 'Sara Das' });
+  await post('/api/lead', b);
+  await post('/api/lead-signal', { kind: 'didnt_book', lead_event_id: b.lead_event_id });
+  gmailFailures = 1;
+  const realUpdate = store.update;
+  store.update = async (key, patch) => { if (patch && patch.nudge1Sending === null) throw new Error('store down'); return realUpdate(key, patch); };
+  try { await runQueue(); } finally { store.update = realUpdate; gmailFailures = 0; }
+  assert.strictEqual(sent.filter(e => e.to === 'stuck@example.com').length, 0);
+  assert.deepStrictEqual(alertsSent.map(x => x.subject), ['Nudge email not sent']);
+  assert.strictEqual(alertsSent[0].text, 'Nudge email not sent: Sara Das, Skyline Homes. WhatsApp them two times instead.');
 });
 
 test('8.3: a failing nudge is tried 3 times, then Shubhang is alerted with the brief\'s words', async () => {
