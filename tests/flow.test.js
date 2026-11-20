@@ -199,14 +199,89 @@ test('8.1: a booking sends the first email at once; the same webhook twice sends
   assert.strictEqual(published.length, 2);
 });
 
-test('8.1: a moved booking, a cancelled one and another event send nothing', async () => {
+test('8.1: a cancelled booking and another event send nothing', async () => {
   reset();
   for (const raw of [
-    JSON.stringify({ triggerEvent: 'BOOKING_RESCHEDULED', payload: JSON.parse(webhookBody()).payload }),
+    JSON.stringify({ triggerEvent: 'BOOKING_RESCHEDULED', payload: JSON.parse(webhookBody({ eventTypeId: 111 })).payload }),
     JSON.stringify({ triggerEvent: 'BOOKING_CANCELLED', payload: JSON.parse(webhookBody()).payload }),
     webhookBody({ eventTypeId: 111 })
   ]) assert.strictEqual((await sendWebhook(raw)).status, 200);
   assert.strictEqual(sent.length, 0);
+});
+
+// ---------- A moved call: one email with the new time ----------
+const movedBody = (uid, fromUid, startIso) => JSON.stringify({ triggerEvent: 'BOOKING_RESCHEDULED', payload: Object.assign(JSON.parse(webhookBody({ uid, startTime: startIso })).payload, { rescheduleUid: fromUid }) });
+async function atTime(iso, fn) {
+  const realNow = Date.now;
+  Date.now = () => new Date(iso).getTime();
+  try { return await fn(); } finally { Date.now = realNow; }
+}
+const NEW_START = '2026-11-28T06:00:00.000Z'; // Sat 28 Nov, 11:30 am IST
+const NEWER_START = '2026-11-29T08:30:00.000Z'; // Sun 29 Nov, 2:00 pm IST
+const movedEmails = () => sent.filter(e => /^Your call is moved to /.test(e.subject));
+
+test('moved: our second email hadn\'t gone, so the moved email replaces it at the second email\'s time', async () => {
+  reset();
+  calStart['bk-m2'] = NEW_START;
+  await atTime('2026-11-25T04:30:00.000Z', () => sendWebhook(webhookBody({ uid: 'bk-m1', startTime: '2026-11-27T06:00:00.000Z' }))); // booked 10 am IST
+  const secondDue = new Date('2026-11-25T09:30:00.000Z').getTime(); // 5 hours later
+  await atTime('2026-11-25T06:00:00.000Z', () => sendWebhook(movedBody('bk-m2', 'bk-m1', NEW_START)));
+  assert.strictEqual(movedEmails().length, 0, 'not sent at once');
+  assert.strictEqual(published.filter(p => p.notBefore * 1000 === secondDue).length, 2, 'the second email and the moved email, both at the second email\'s time');
+  await atTime('2026-11-25T09:30:00.000Z', () => runQueue());
+  assert.strictEqual(sent.length, 2, 'the booking email and the moved email: the lead gets one, not two');
+  const e = movedEmails()[0];
+  assert.strictEqual(e.subject, 'Your call is moved to Sat 28 Nov at 11:30 am IST');
+  assert.match(e.text, /^Hi Asha,\n\nShubhang here\. Your call is now rescheduled to Saturday, 28 November, at 11:30 am IST\. I’ll be on the call with you myself\. Looking forward to it\.\n\nHere’s the Google Meet link: https:\/\/meet\.google\.com\/live-link\n\nIf you have any questions before then, just reply here\.\n\nSee you then,\nShubhang$/);
+  assert.ok(!e.inReplyTo, 'its own email, with its own subject');
+});
+
+test('moved: our second email already went, so the moved email goes right after the move; each move sends one', async () => {
+  reset();
+  calStart['bk-n1'] = '2026-11-27T06:00:00.000Z'; calStart['bk-n2'] = NEW_START; calStart['bk-n3'] = NEWER_START;
+  await atTime('2026-11-25T04:30:00.000Z', () => sendWebhook(webhookBody({ uid: 'bk-n1', startTime: '2026-11-27T06:00:00.000Z' })));
+  await atTime('2026-11-25T09:30:00.000Z', () => runQueue());
+  assert.strictEqual(sent.length, 2, 'booking email and second email');
+  await atTime('2026-11-25T12:00:00.000Z', () => sendWebhook(movedBody('bk-n2', 'bk-n1', NEW_START))); // 5:30 pm IST
+  assert.strictEqual(movedEmails().length, 1);
+  await atTime('2026-11-25T12:00:00.000Z', () => sendWebhook(movedBody('bk-n2', 'bk-n1', NEW_START))); // the same webhook again
+  assert.strictEqual(movedEmails().length, 1, 'the same move twice: one email');
+  await atTime('2026-11-25T13:00:00.000Z', () => sendWebhook(movedBody('bk-n3', 'bk-n2', NEWER_START)));
+  assert.strictEqual(movedEmails().length, 2, 'moved again: one new email');
+  assert.strictEqual(movedEmails()[1].subject, 'Your call is moved to Sun 29 Nov at 2:00 pm IST');
+  await atTime('2026-11-25T13:30:00.000Z', () => runQueue());
+  assert.strictEqual(movedEmails().length, 2);
+});
+
+test('moved: a move at night (9 pm to 8 am in the lead\'s zone) waits until 8 am', async () => {
+  reset();
+  calStart['bk-o2'] = NEW_START;
+  await atTime('2026-11-25T17:00:00.000Z', () => sendWebhook(movedBody('bk-o2', 'bk-unknown', NEW_START))); // 10:30 pm IST
+  assert.strictEqual(movedEmails().length, 0);
+  assert.ok(published.some(p => p.notBefore * 1000 === new Date('2026-11-26T02:30:00.000Z').getTime()), 'due 8 am IST');
+  await atTime('2026-11-26T02:30:00.000Z', () => runQueue());
+  assert.strictEqual(movedEmails().length, 1);
+});
+
+test('moved twice before the waiting moved email went: one email, with the latest time', async () => {
+  reset();
+  calStart['bk-p2'] = NEW_START; calStart['bk-p3'] = NEWER_START;
+  await atTime('2026-11-25T04:30:00.000Z', () => sendWebhook(webhookBody({ uid: 'bk-p1', startTime: '2026-11-27T06:00:00.000Z' })));
+  await atTime('2026-11-25T06:00:00.000Z', () => sendWebhook(movedBody('bk-p2', 'bk-p1', NEW_START)));
+  await atTime('2026-11-25T07:00:00.000Z', () => sendWebhook(movedBody('bk-p3', 'bk-p2', NEWER_START)));
+  assert.strictEqual(movedEmails().length, 0, 'both wait for the second email\'s time');
+  await atTime('2026-11-25T09:30:00.000Z', () => runQueue());
+  assert.strictEqual(sent.length, 2);
+  assert.strictEqual(movedEmails()[0].subject, 'Your call is moved to Sun 29 Nov at 2:00 pm IST');
+});
+
+test('moved: a moved call that was then cancelled sends nothing', async () => {
+  reset();
+  calStart['bk-q2'] = NEW_START;
+  await atTime('2026-11-25T17:00:00.000Z', () => sendWebhook(movedBody('bk-q2', 'bk-q1', NEW_START)));
+  calStatus['bk-q2'] = 'cancelled';
+  await atTime('2026-11-26T02:30:00.000Z', () => runQueue());
+  assert.strictEqual(movedEmails().length, 0);
 });
 
 test('8.2: the second email goes under the first, in the same thread, with Re:', async () => {

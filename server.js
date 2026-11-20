@@ -229,7 +229,6 @@ app.post('/api/resume', async (req, res) => {
   }
 });
 
-// Cal.com's "Booking Created" webhook (set on the Lead Conversion Clarity Call event only)
 // Reschedule with our own time picker on the thank-you page. The booking's uid (in its reschedule link) is what
 // lets someone move it, exactly as Cal.com's own reschedule link works. Checks: our event, still booked, in the
 // future, and a new time within the same window as booking (Cal.com checks the time is free).
@@ -277,6 +276,7 @@ app.post('/api/reschedule', async (req, res) => {
   }
 });
 
+// Cal.com's webhook (set on the Lead Conversion Clarity Call event only): Booking Created, Rescheduled and Cancelled
 app.post('/api/cal-webhook', async (req, res) => {
   const secret = process.env.CAL_WEBHOOK_SECRET;
   if (!secret) return res.status(503).json({ ok: false, error: 'CAL_WEBHOOK_SECRET is not set' });
@@ -296,6 +296,9 @@ app.post('/api/cal-webhook', async (req, res) => {
   lafter.after(async () => {
     if (out.uid) {
       try { await lwebhook.sendFirst(out.uid); } catch (err) { console.error('❌ [/api/cal-webhook email]:', logsafe.safe(err.message)); }
+    }
+    if (out.movedUid) {
+      try { await lwebhook.queueMoved(out.movedUid, out.dueAt); } catch (err) { console.error('❌ [/api/cal-webhook moved email]:', logsafe.safe(err.message)); }
     }
     try { await lodooleads.onWebhook(req.body); } catch (err) { console.error('❌ [/api/cal-webhook Odoo]:', logsafe.safe(err.message)); }
   });
