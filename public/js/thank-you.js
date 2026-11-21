@@ -94,10 +94,11 @@
       show($('ty-card-lead'), false);
       show($('ty-invite'), true);
 
-      if (booking.rescheduleUrl && /^https:\/\//.test(booking.rescheduleUrl)) {
-        $('ty-resched-link').setAttribute('href', booking.rescheduleUrl);
-        show($('ty-resched'), true);
-      }
+      // Shown only with a live booking's link; after a move with no new uid it's hidden (never the cancelled one's link)
+      var reschedOk = !!(booking.rescheduleUrl && /^https:\/\//.test(booking.rescheduleUrl));
+      if (reschedOk) $('ty-resched-link').setAttribute('href', booking.rescheduleUrl);
+      else $('ty-resched-link').setAttribute('href', '#');
+      show($('ty-resched'), reschedOk);
 
       var shortDay = dp.weekday.slice(0, 3) + ' ' + dp.day + ' ' + dp.month.slice(0, 3);
       confirmMessage = 'YES, confirming my Lead Conversion Clarity Call on ' + shortDay + ' at ' + time +

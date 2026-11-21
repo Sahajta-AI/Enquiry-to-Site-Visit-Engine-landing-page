@@ -313,3 +313,28 @@ test('reschedule pop-up: the booking page path comes from CAL_BOOKING_PAGE (a fu
     if (prev === undefined) delete process.env.CAL_BOOKING_PAGE; else process.env.CAL_BOOKING_PAGE = prev;
   }
 });
+
+test('store counter: on Upstash the count and its expiry are set in one step (an address can never stay blocked)', async () => {
+  const store = require('../lib/store');
+  const saved = { url: process.env.UPSTASH_REDIS_REST_URL, token: process.env.UPSTASH_REDIS_REST_TOKEN, fetch: global.fetch };
+  const calls = [];
+  process.env.UPSTASH_REDIS_REST_URL = 'https://store.example.test';
+  process.env.UPSTASH_REDIS_REST_TOKEN = 'tok';
+  global.fetch = async (url, opts) => { calls.push(JSON.parse(opts.body)); return new Response(JSON.stringify({ result: 3 }), { status: 200 }); };
+  try {
+    assert.strictEqual(await store.incr('resched-ip:1.2.3.4', 600), 3);
+    assert.strictEqual(calls.length, 1, 'one call, not INCR then EXPIRE');
+    const [cmd, script, numKeys, key, ttl] = calls[0];
+    assert.strictEqual(cmd, 'EVAL');
+    assert.match(script, /INCR/);
+    assert.match(script, /TTL/);
+    assert.match(script, /EXPIRE/);
+    assert.strictEqual(numKeys, '1');
+    assert.match(key, /resched-ip:1\.2\.3\.4$/);
+    assert.strictEqual(ttl, '600');
+  } finally {
+    global.fetch = saved.fetch;
+    if (saved.url === undefined) delete process.env.UPSTASH_REDIS_REST_URL; else process.env.UPSTASH_REDIS_REST_URL = saved.url;
+    if (saved.token === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN; else process.env.UPSTASH_REDIS_REST_TOKEN = saved.token;
+  }
+});
