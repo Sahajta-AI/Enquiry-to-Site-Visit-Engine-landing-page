@@ -329,6 +329,18 @@ app.get('/api/cron/odoo-signals', async (req, res) => {
   }
 });
 
+// "Odoo 12", daily at 8 am IST (vercel.json): every Warm-Chain lead keeps a next step. Does nothing while ODOO_V2 is off.
+app.get('/api/cron/odoo-daily', async (req, res) => {
+  if (!lscheduler.verifyCron(req)) return res.status(401).json({ ok: false });
+  try {
+    const out = await lodoosignals.dailySafetyNet({ tests: false });
+    return res.status(200).json({ ok: out.ok, result: out.result });
+  } catch (err) {
+    console.error('❌ [/api/cron/odoo-daily]:', logsafe.safe(err.message));
+    return res.status(500).json({ ok: false });
+  }
+});
+
 // Used only if the scheduler is switched to Vercel Cron (SCHEDULER=cron): runs whatever is due
 app.get('/api/jobs/tick', async (req, res) => {
   if (!lscheduler.verifyCron(req)) return res.status(401).json({ ok: false });

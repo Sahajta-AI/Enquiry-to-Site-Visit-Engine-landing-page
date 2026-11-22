@@ -60,6 +60,8 @@ function match(l, [f, op, v]) {
   if (op === 'in') return Array.isArray(x) ? v.some(id => x.includes(id)) : v.includes(x);
   if (op === '=ilike') return likeRe(v, 'i').test(String(x || ''));
   if (op === '>=') return String(x) >= String(v);
+  if (op === '<=') return String(x) <= String(v);
+  if (op === '!=') return x !== v;
   if (op === '=like') return new RegExp('^' + String(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*') + '$').test(String(x));
   if (op === 'not like') return !String(x || '').includes(v);
   throw new Error('fake Odoo: operator ' + op);
@@ -69,7 +71,8 @@ function shape(l) {
     stage_id: [l.stage_id, stageName(l.stage_id)], lost_reason_id: l.lost_reason_id ? [l.lost_reason_id, 'Too expensive'] : false,
     user_id: [7, 'Shubhang Sethi'], email_normalized: l.email_from ? l.email_from.toLowerCase() : false,
     phone_sanitized: l.phone || false, partner_id: l.partner_id ? [l.partner_id, 'Contact'] : false, [SVC]: l[SVC] || [],
-    expected_revenue: l.expected_revenue || 0, recurring_revenue: l.recurring_revenue || 0
+    expected_revenue: l.expected_revenue || 0, recurring_revenue: l.recurring_revenue || 0,
+    won_status: l.active === false ? (Number(l.probability) > 0 ? 'pending' : 'lost') : l.stage_id === 6 ? 'won' : 'pending'
   });
 }
 function fakeOdoo(model, method, a) {
@@ -140,9 +143,7 @@ function fakeOdoo(model, method, a) {
     if (method === 'search_read') {
       const ids = a.domain.find(d => d[0] === 'id');
       if (ids) return acts.filter(x => !x.done && ids[2].includes(x.id)).map(x => ({ id: x.id }));
-      const want = Object.fromEntries(a.domain.map(d => [d[0], d[2]]));
-      const inList = a.domain.find(d => d[0] === 'summary' && d[1] === 'in');
-      return acts.filter(x => !x.done && x.res_model === want.res_model && x.res_id === want.res_id && (inList ? inList[2].includes(x.summary) : x.summary === want.summary) && (!want.date_deadline || x.date_deadline === want.date_deadline)).map(x => ({ id: x.id, summary: x.summary, date_deadline: x.date_deadline }));
+      return acts.filter(x => !x.done && a.domain.every(d => match(x, d))).map(x => ({ id: x.id, summary: x.summary, date_deadline: x.date_deadline, res_id: x.res_id }));
     }
     if (method === 'unlink') { acts = acts.filter(x => !a.ids.includes(x.id)); return true; }
     if (method === 'write') { a.ids.forEach(id => Object.assign(acts.find(x => x.id === id), a.vals)); return true; }
@@ -154,6 +155,7 @@ function fakeOdoo(model, method, a) {
 // ---------------- the rest of the world ----------------
 const sent = [], metaCalls = [], queued = [];
 const threadsFake = {}; // threadId -> [{ id, from }]
+const calCancels = [];
 let gmailDown = false;
 const calBookings = {}, calByEmail = {};
 global.fetch = async (url, opts) => {
@@ -191,6 +193,10 @@ global.fetch = async (url, opts) => {
     const body = JSON.parse(opts.body);
     metaCalls.push({ url, body, event: body.data[0] });
     return json({ events_received: 1, messages: [], fbtrace_id: 'trace1' });
+  }
+  if (/api\.cal\.com\/v2\/bookings\/[^/?]+\/cancel$/.test(url) && opts.method === 'POST') {
+    calCancels.push({ uid: decodeURIComponent(url.split('/').slice(-2)[0]), body: JSON.parse(opts.body) });
+    return json({ status: 'success' });
   }
   if (/api\.cal\.com\/v2\/bookings\/[^?]+$/.test(url)) {
     const uid = decodeURIComponent(url.split('/').pop());
@@ -231,7 +237,7 @@ const post = (p, body, headers) => realFetch(base + p, { method: 'POST', headers
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const settle = () => sleep(150); // the work after the reply (waitUntil) finishes
 
-function reset() { delete process.env.ODOO_V2; delete process.env.NUDGES_ENABLED; queued.length = 0; for (const k of Object.keys(threadsFake)) delete threadsFake[k]; resetOdoo(); sent.length = 0; metaCalls.length = 0; store._resetMemory(); odoo._reset(); for (const k of Object.keys(calBookings)) delete calBookings[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; delete process.env.NEW_TRACKING; delete process.env.VERCEL_ENV; }
+function reset() { delete process.env.ODOO_V2; delete process.env.NUDGES_ENABLED; queued.length = 0; calCancels.length = 0; for (const k of Object.keys(threadsFake)) delete threadsFake[k]; resetOdoo(); sent.length = 0; metaCalls.length = 0; store._resetMemory(); odoo._reset(); for (const k of Object.keys(calBookings)) delete calBookings[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; delete process.env.NEW_TRACKING; delete process.env.VERCEL_ENV; }
 
 const Q1_FIT = 'We run paid ads but leads go cold because follow-up is slow';
 const Q2_FIT = 'As soon as possible';
@@ -1413,4 +1419,108 @@ test('V2 Odoo 15: Back with changed details: no note, the Contact takes the late
   assert.strictEqual(await signal('didnt_book', b2.lead_event_id), 'duplicate', 'and the real signal after it');
   assert.ok(!notes.some(x => x.body.startsWith('Filled the form')), 'no "didn\'t book" note');
   assert.ok(!(await store.get('nudgelead:' + b2.lead_event_id)), 'no nudges');
+});
+
+// ---------------- ODOO_V2 step 5 (Notion "Odoo 12" and "Test bookings") ----------------
+const tb = require(path.join(tmp, 'lib', 'testbookings.js'));
+const signalsMod = require(path.join(tmp, 'lib', 'odoosignals.js'));
+const daysAgo = (d) => new Date(Date.now() - d * 86400000).toISOString().slice(0, 19).replace('T', ' ');
+const jobsQueued = async () => (await Promise.all(queued.map(id => store.get('job:' + id)))).filter(Boolean);
+
+test('V2 Test bookings: a TEST_EMAILS booking is cancelled 1 hour later ("Cancelled by: you", no rebook reminder); a real booking never is', async () => {
+  v2on();
+  const tester = 'tester@example.com';
+  await hook('BOOKING_CREATED', 'bk-t1', tester, inDays(3, 10).toISOString());
+  await settle();
+  const job = (await jobsQueued()).find(j => j.kind === 'test-cancel');
+  assert.ok(job && job.payload.key === 'bk-t1', 'queued');
+  assert.ok(Math.abs(job.runAt - (Date.now() + 3600000)) < 60000, '1 hour after booking');
+  calBookings['bk-t1'] = { uid: 'bk-t1', status: 'accepted', attendees: [{ name: 'Tester', email: tester }] };
+  assert.strictEqual(await tb.runCancel('bk-t1'), 'cancelled');
+  assert.deepStrictEqual(calCancels.map(c => c.uid), ['bk-t1']);
+  assert.strictEqual(await tb.runCancel('bk-t1'), 'duplicate', 'once');
+  await hook('BOOKING_CANCELLED', 'bk-t1', tester, inDays(3, 10).toISOString(), { cancellationReason: 'Test booking, cancelled automatically after 1 hour', organizer: { email: 'shubhang@sahajta.com' } });
+  await settle();
+  const c = notes.filter(x => x.body.startsWith('Call cancelled'));
+  assert.strictEqual(c.length, 1);
+  assert.ok(c[0].body.includes('Cancelled by: you'));
+  assert.ok(!acts.some(x => x.summary === 'WhatsApp: get the call rebooked' && !x.done), 'no rebook reminder for a test booking');
+
+  // a real person's booking: never queued, and never cancelled even if asked
+  v2on();
+  await hook('BOOKING_CREATED', 'bk-t2', 'real' + (++n) + '@example.com', inDays(3, 10).toISOString());
+  await settle();
+  assert.ok(!(await jobsQueued()).some(j => j.kind === 'test-cancel'));
+  calBookings['bk-t2'] = { uid: 'bk-t2', status: 'accepted', attendees: [{ name: 'Real', email: 'someone@example.com' }] };
+  assert.strictEqual(await tb.runCancel('bk-t2'), 'skipped:not-a-test-booking');
+  calBookings['bk-t3'] = { uid: 'bk-t3', status: 'cancelled', attendees: [{ email: tester }] };
+  assert.strictEqual(await tb.runCancel('bk-t3'), 'skipped:cancelled');
+  assert.strictEqual(calCancels.length, 0);
+
+  reset(); // V2 off: nothing
+  await hook('BOOKING_CREATED', 'bk-t4', tester, inDays(3, 10).toISOString());
+  await settle();
+  assert.ok(!(await jobsQueued()).some(j => j.kind === 'test-cancel'));
+  assert.strictEqual(await tb.runCancel('bk-t4'), 'off');
+});
+
+test('V2 Test bookings: [TEST] leads and test Contacts older than 24 hours are archived (never deleted), never shown as Lost; real ones and newer ones are untouched', async () => {
+  v2on();
+  leads.push({ id: 130, name: '[TEST] Old zero', active: true, stage_id: 1, probability: 0, create_date: daysAgo(2) });
+  leads.push({ id: 131, name: '[TEST] Old twenty', active: true, stage_id: 3, probability: 20, create_date: daysAgo(2) });
+  leads.push({ id: 132, name: '[TEST] Fresh', active: true, stage_id: 1, probability: 10, create_date: daysAgo(0.1), partner_id: 140 });
+  leads.push({ id: 133, name: 'Real Co – Warm-Chain System', active: true, stage_id: 1, probability: 10, create_date: daysAgo(5) });
+  partners.push({ id: 140, name: '[TEST] Kept person', is_company: false, active: true, parent_id: 142, create_date: daysAgo(3) });
+  partners.push({ id: 141, name: '[TEST] Old person', is_company: false, active: true, create_date: daysAgo(3) });
+  partners.push({ id: 142, name: '[TEST] Kept company', is_company: true, active: true, create_date: daysAgo(3) });
+  partners.push({ id: 143, name: '[TEST] Old company', is_company: true, active: true, create_date: daysAgo(3) });
+  partners.push({ id: 144, name: 'Real person', is_company: false, active: true, create_date: daysAgo(30) });
+  await run();
+  const L = (id) => leads.find(l => l.id === id);
+  assert.strictEqual(L(130).active, false);
+  assert.strictEqual(L(130).probability, 1, 'kept above 0, so it is not Lost');
+  assert.strictEqual(shape(L(130)).won_status, 'pending');
+  assert.strictEqual(L(131).active, false);
+  assert.strictEqual(L(131).probability, 20);
+  assert.strictEqual(L(132).active, true, 'less than 24 hours old');
+  assert.strictEqual(L(133).active, true, 'a real lead is never touched');
+  const P = (id) => partners.find(p => p.id === id);
+  assert.strictEqual(P(141).active, false);
+  assert.strictEqual(P(143).active, false);
+  assert.strictEqual(P(140).active, true, 'still linked to an open test lead');
+  assert.strictEqual(P(142).active, true, 'the company of a kept test person');
+  assert.strictEqual(P(144).active, true, 'a real Contact is never touched');
+  assert.ok(!odooCalls.some(c => c.method === 'unlink'), 'nothing deleted');
+  assert.ok(!odooCalls.some(c => c.method === 'write' && c.a.vals && 'lost_reason_id' in c.a.vals), 'never marked Lost');
+});
+
+test('V2 Odoo 12: the 8 am safety net gives "Next step: plan what\'s next for this lead" only to open Warm-Chain leads with no open reminder that aren\'t waiting on a planned step', async () => {
+  v2on();
+  const old = daysAgo(1);
+  const mk = (id, extra) => leads.push(Object.assign({ id, name: `[TEST] L${id}`, active: true, stage_id: 2, [SVC]: [WC], create_date: old, email_from: `l${id}@example.com` }, extra || {}));
+  mk(150); // no reminder: gets one
+  mk(151); acts.push({ id: ++seq, res_model: 'crm.lead', res_id: 151, summary: 'Any reminder', date_deadline: isoDay(2), done: false });
+  mk(152); await store.set('odoowait:l152@example.com', 1); // in the nudge sequence
+  mk(153, { create_date: new Date(Date.now() - 3600000).toISOString().slice(0, 19).replace('T', ' ') }); // made an hour ago
+  mk(154, { stage_id: 6 }); // won
+  mk(155, { [SVC]: [] }); // hand-made, no tag
+  mk(156, { active: false }); // lost
+  leads.push({ id: 157, name: 'Real – Warm-Chain System', active: true, stage_id: 2, [SVC]: [WC], create_date: old }); // a real lead, not in a test run
+  const r = await (await post('/api/tracking-test', { action: 'odoo-daily' }, { 'x-test-password': 'tp-secret' })).json();
+  assert.strictEqual(r.result, 'done');
+  const made = acts.filter(x => x.summary === 'Next step: plan what\'s next for this lead');
+  assert.deepStrictEqual(made.map(x => x.res_id), [150]);
+  assert.strictEqual(made[0].date_deadline, isoDay(0));
+  assert.strictEqual(made[0].typeId, 4);
+  assert.ok(!made[0].note, 'no description');
+  assert.strictEqual(notes.length, 0, 'no note');
+  await post('/api/tracking-test', { action: 'odoo-daily' }, { 'x-test-password': 'tp-secret' });
+  assert.strictEqual(acts.filter(x => x.summary === 'Next step: plan what\'s next for this lead').length, 1, 'no copy');
+
+  assert.strictEqual((await signalsMod.dailySafetyNet({ tests: false })).result, 'production-only', 'the real run only on production');
+  assert.strictEqual((await realFetch(base + '/api/cron/odoo-daily')).status, 401, 'the cron route needs CRON_SECRET');
+  reset(); // V2 off
+  const off = await (await realFetch(base + '/api/cron/odoo-daily', { headers: { Authorization: 'Bearer cron-secret-1234567' } })).json();
+  assert.strictEqual(off.result, 'off');
+  assert.strictEqual(odooCalls.length, 0, 'not one Odoo call with the switch off');
 });
