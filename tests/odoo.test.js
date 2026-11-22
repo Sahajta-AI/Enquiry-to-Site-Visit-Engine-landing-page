@@ -33,8 +33,19 @@ const json = (o, status) => new Response(JSON.stringify(o), { status: status || 
 const STAGES = { New: 1, Replied: 2, 'Call Scheduled': 3, Qualified: 4, 'Proposal Sent': 5, 'Deal Closed': 6 };
 const stageName = (id) => Object.keys(STAGES).find(k => STAGES[k] === id);
 const ON_STAGE = { 1: ['WhatsApp follow-up', 1], 2: ['Get the call booked', 2], 3: ['Personal message the evening before the call', 0], 4: ['Send the proposal', 1], 5: ['Follow up on the proposal', 2], 6: ['Kickoff: WhatsApp group + kickoff call', 1] };
-let leads, acts, notes, odooCalls, odooDown, seq, utmCampaigns, slowOnce;
-function resetOdoo() { leads = []; acts = []; notes = []; odooCalls = []; odooDown = false; seq = 100; utmCampaigns = []; slowOnce = []; }
+let odooFail = null;
+let leads, acts, notes, odooCalls, odooDown, seq, utmCampaigns, slowOnce, partners, tagExists;
+function resetOdoo() { leads = []; acts = []; notes = []; odooCalls = []; odooDown = false; seq = 100; utmCampaigns = []; slowOnce = []; partners = []; tagExists = true; }
+const SVC = 'x_studio_service_interested_in_1'; // Service Interested In (many2many to crm.tag); the Warm-Chain tag is 10
+const WC = 10;
+// many2many commands: [[4, id]] links one tag
+function applyM2m(l, vals) {
+  if (!Array.isArray(vals[SVC])) return;
+  const cur = new Set(l[SVC] || []);
+  vals[SVC].forEach(c => { if (Array.isArray(c) && c[0] === 4) cur.add(c[1]); else if (typeof c === 'number') cur.add(c); });
+  l[SVC] = [...cur];
+}
+const likeRe = (v, flags) => new RegExp('^' + String(v).replace(/\\([\\%_])|([%_])|([.*+?^${}()|[\]\\])/g, (m, esc, wild, meta) => esc ? '\\' + esc : wild === '%' ? '.*' : wild === '_' ? '.' : '\\' + meta) + '$', flags);
 resetOdoo();
 const isoDay = (offset) => new Date(Date.now() + 5.5 * 3600000 + offset * 86400000).toISOString().slice(0, 10);
 function addActs(lead, why) {
@@ -42,11 +53,12 @@ function addActs(lead, why) {
   const [title, days] = why === 'restore' ? ['Came back: read the history first', 1] : ON_STAGE[lead.stage_id];
   acts.push({ id: ++seq, res_model: 'crm.lead', res_id: lead.id, summary: title, date_deadline: isoDay(days), done: false });
 }
-const val = (l, f) => f === 'email_normalized' ? (l.email_from ? l.email_from.toLowerCase() : false) : f === 'phone_sanitized' ? (l.phone || false) : l[f];
+const val = (l, f) => f === 'email_normalized' ? ((l.email_from || l.email) ? (l.email_from || l.email).toLowerCase() : false) : f === 'phone_sanitized' ? (l.phone || false) : f === SVC ? (l[SVC] || []) : l[f];
 function match(l, [f, op, v]) {
   const x = val(l, f);
   if (op === '=') return (v === false ? !x : x === v);
-  if (op === 'in') return v.includes(x);
+  if (op === 'in') return Array.isArray(x) ? v.some(id => x.includes(id)) : v.includes(x);
+  if (op === '=ilike') return likeRe(v, 'i').test(String(x || ''));
   if (op === '>=') return String(x) >= String(v);
   if (op === '=like') return new RegExp('^' + String(v).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*') + '$').test(String(x));
   if (op === 'not like') return !String(x || '').includes(v);
@@ -56,7 +68,8 @@ function shape(l) {
   return Object.assign({}, l, {
     stage_id: [l.stage_id, stageName(l.stage_id)], lost_reason_id: l.lost_reason_id ? [l.lost_reason_id, 'Too expensive'] : false,
     user_id: [7, 'Shubhang Sethi'], email_normalized: l.email_from ? l.email_from.toLowerCase() : false,
-    phone_sanitized: l.phone || false
+    phone_sanitized: l.phone || false, partner_id: l.partner_id ? [l.partner_id, 'Contact'] : false, [SVC]: l[SVC] || [],
+    expected_revenue: l.expected_revenue || 0
   });
 }
 function fakeOdoo(model, method, a) {
@@ -65,7 +78,18 @@ function fakeOdoo(model, method, a) {
   if (model === 'crm.team') return [{ id: 1 }];
   if (model === 'res.users') return [{ id: 7 }];
   if (model === 'utm.source') return [{ id: 3 }];
-  if (model === 'mail.activity.type') return [{ id: 2 }];
+  if (model === 'mail.activity.type') return [{ id: a.domain[0][2] === 'To-Do' ? 4 : 2 }];
+  if (model === 'crm.tag') return tagExists && a.domain[0][2] === 'Warm-Chain System' ? [{ id: WC }] : [];
+  if (model === 'crm.recurring.plan') return a.domain[0][2] === 'Monthly' ? [{ id: 1 }] : [];
+  if (model === 'res.partner') {
+    if (method === 'search_read') {
+      let rows = partners.filter(x => x.active !== false && a.domain.every(d => match(x, d)));
+      rows = rows.slice().sort((x, y) => x.id - y.id);
+      return rows.slice(0, a.limit || 80).map(x => Object.assign({}, x, { parent_id: x.parent_id ? [x.parent_id, 'Company'] : false }));
+    }
+    if (method === 'create') { const c = Object.assign({ id: ++seq, active: true, create_date: new Date().toISOString().slice(0, 19).replace('T', ' ') }, a.vals_list[0]); partners.push(c); return [c.id]; }
+    if (method === 'write') { a.ids.forEach(id => Object.assign(partners.find(x => x.id === id), a.vals)); return true; }
+  }
   if (model === 'utm.campaign') {
     if (method === 'create') { const c = Object.assign({ id: ++seq }, a.vals_list[0]); utmCampaigns.push(c); return [c.id]; }
     const t = a.domain.find(d => d[0] === 'title');
@@ -84,13 +108,15 @@ function fakeOdoo(model, method, a) {
     if (method === 'create') {
       const v = a.vals_list[0];
       const l = Object.assign({ id: ++seq, active: true, priority: '0', create_date: new Date().toISOString().slice(0, 19).replace('T', ' '), write_date: new Date().toISOString(), date_last_stage_update: new Date().toISOString().slice(0, 19).replace('T', ' ') }, v);
+      delete l[SVC]; applyM2m(l, v);
       leads.push(l); addActs(l, 'stage'); return [l.id];
     }
     if (method === 'write') {
       a.ids.forEach(id => {
         const l = leads.find(x => x.id === id);
         const wasActive = l.active, oldStage = l.stage_id;
-        Object.assign(l, a.vals);
+        const vals = Object.assign({}, a.vals); delete vals[SVC];
+        Object.assign(l, vals); applyM2m(l, a.vals);
         if (a.vals.stage_id && a.vals.stage_id !== oldStage) {
           l.date_last_stage_update = new Date().toISOString().slice(0, 19).replace('T', ' ');
           if (a.vals.stage_id === 6) l.date_closed = l.date_last_stage_update;
@@ -115,8 +141,10 @@ function fakeOdoo(model, method, a) {
       const ids = a.domain.find(d => d[0] === 'id');
       if (ids) return acts.filter(x => !x.done && ids[2].includes(x.id)).map(x => ({ id: x.id }));
       const want = Object.fromEntries(a.domain.map(d => [d[0], d[2]]));
-      return acts.filter(x => !x.done && x.res_model === want.res_model && x.res_id === want.res_id && x.summary === want.summary).map(x => ({ id: x.id }));
+      const inList = a.domain.find(d => d[0] === 'summary' && d[1] === 'in');
+      return acts.filter(x => !x.done && x.res_model === want.res_model && x.res_id === want.res_id && (inList ? inList[2].includes(x.summary) : x.summary === want.summary)).map(x => ({ id: x.id, summary: x.summary }));
     }
+    if (method === 'unlink') { acts = acts.filter(x => !a.ids.includes(x.id)); return true; }
     if (method === 'write') { a.ids.forEach(id => Object.assign(acts.find(x => x.id === id), a.vals)); return true; }
     if (method === 'action_feedback') { a.ids.forEach(id => { const x = acts.find(y => y.id === id); x.done = true; x.feedback = a.feedback; }); return true; }
   }
@@ -135,6 +163,7 @@ global.fetch = async (url, opts) => {
     assert.strictEqual(opts.headers['X-Odoo-Database'], 'db1');
     if (odooDown) return json({ message: 'down' }, 500);
     const [model, method] = url.replace('https://odoo.example.test/json/2/', '').split('/');
+    if (odooFail && odooFail(model, method)) return json({ message: 'refused' }, 400);
     let out;
     try { out = fakeOdoo(model, method, JSON.parse(opts.body)); } catch (e) { return json({ message: e.message }, 400); }
     // Saved in Odoo, but the reply comes too late: the website's call times out
@@ -193,7 +222,7 @@ const post = (p, body, headers) => realFetch(base + p, { method: 'POST', headers
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const settle = () => sleep(150); // the work after the reply (waitUntil) finishes
 
-function reset() { resetOdoo(); sent.length = 0; metaCalls.length = 0; store._resetMemory(); odoo._reset(); for (const k of Object.keys(calBookings)) delete calBookings[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; delete process.env.NEW_TRACKING; delete process.env.VERCEL_ENV; }
+function reset() { delete process.env.ODOO_V2; resetOdoo(); sent.length = 0; metaCalls.length = 0; store._resetMemory(); odoo._reset(); for (const k of Object.keys(calBookings)) delete calBookings[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; delete process.env.NEW_TRACKING; delete process.env.VERCEL_ENV; }
 
 const Q1_FIT = 'We run paid ads but leads go cold because follow-up is slow';
 const Q2_FIT = 'As soon as possible';
@@ -773,4 +802,213 @@ test('4 the Odoo calls use JSON-2, named arguments, and nothing is ever deleted'
   assert.ok(!odooCalls.some(c => c.method === 'unlink'));
   assert.ok(!odooCalls.some(c => c.model === 'res.partner'));
   assert.ok(!odooCalls.some(c => c.model === 'crm.lead' && c.method === 'write' && ('partner_id' in c.a.vals || 'tag_ids' in c.a.vals)));
+});
+
+// ---------------- ODOO_V2 (Notion "Odoo 0" to "Odoo 4"): only with the switch on ----------------
+const v2on = () => { reset(); process.env.ODOO_V2 = '1'; };
+const companies = () => partners.filter(x => x.is_company);
+const people = () => partners.filter(x => !x.is_company);
+
+test('V2 Odoo 1-3: a new lead gets the company and person Contacts (linked), the new title and the Warm-Chain tag', async () => {
+  v2on();
+  const b = leadBody();
+  await sendLead(b);
+  const [l] = leadOf(b.email);
+  assert.strictEqual(l.name, '[TEST] Rao Estates – Warm-Chain System');
+  assert.deepStrictEqual(l[SVC], [WC], 'the tag, found by name');
+  assert.strictEqual(companies().length, 1);
+  assert.strictEqual(people().length, 1);
+  const [co] = companies(); const [pe] = people();
+  assert.strictEqual(co.name, '[TEST] Rao Estates', 'test Contacts carry [TEST] too');
+  assert.strictEqual(pe.name, '[TEST] Asha Rao');
+  assert.strictEqual(pe.email, b.email.toLowerCase());
+  assert.strictEqual(pe.phone, '+919876543210');
+  assert.strictEqual(pe.parent_id, co.id, 'the person is the company\'s point of contact');
+  assert.strictEqual(l.partner_id, pe.id, 'the lead\'s Contact is the person');
+  assert.strictEqual(l.contact_name, 'Asha Rao');
+  assert.strictEqual(l.partner_name, 'Rao Estates');
+  assert.ok(!l.expected_revenue, 'no revenue before a booking');
+  assert.ok(!odooCalls.some(c => ['crm.tag', 'res.partner'].includes(c.model) && c.method === 'create' && c.model === 'crm.tag'), 'the tag is never made');
+});
+
+test('V2 Odoo 4: a booking sets Expected Revenue and Recurring Revenues to 99,000, plan Monthly; same lead, no new Contact', async () => {
+  v2on();
+  const b = leadBody();
+  await sendLead(b);
+  await hook('BOOKING_CREATED', 'bk-v2a', b.email, inDays(2, 10).toISOString());
+  await settle();
+  assert.strictEqual(leads.length, 1);
+  assert.strictEqual(partners.length, 2, 'no new Contact');
+  const l = leads[0];
+  assert.strictEqual(l.stage_id, STAGES['Call Scheduled']);
+  assert.strictEqual(l.expected_revenue, 99000);
+  assert.strictEqual(l.recurring_revenue, 99000);
+  assert.strictEqual(l.recurring_plan, 1, 'Monthly, found by name');
+});
+
+test('V2 Odoo 4: an amount already in Expected Revenue is never overwritten by a booking', async () => {
+  v2on();
+  const email = 'paid' + (++n) + '@example.com';
+  leads.push({ id: 80, name: '[TEST] Paid Co – Warm-Chain System', active: true, stage_id: 2, email_from: email, [SVC]: [WC], expected_revenue: 150000, partner_id: 999 });
+  await hook('BOOKING_CREATED', 'bk-v2b', email, inDays(2, 10).toISOString());
+  await settle();
+  assert.strictEqual(leads[0].stage_id, STAGES['Call Scheduled']);
+  assert.strictEqual(leads[0].expected_revenue, 150000);
+  assert.ok(!('recurring_revenue' in leads[0]));
+});
+
+test('V2 Odoo 1: the same email or phone again reuses the Contact and the lead; a saved email is never replaced', async () => {
+  v2on();
+  const b = leadBody({ whatsapp_number: '9811111111' });
+  await sendLead(b);
+  await sendLead(leadBody({ email: b.email, whatsapp_number: '9811111111' })); // a new visit, same email
+  await sendLead(leadBody({ email: 'second' + (++n) + '@example.com', whatsapp_number: '9811111111' })); // same phone, other email
+  assert.strictEqual(leads.length, 1, 'one lead');
+  assert.strictEqual(partners.length, 2, 'one company and one person');
+  assert.strictEqual(leads[0].email_from, b.email.toLowerCase(), 'the saved email stays');
+});
+
+test('V2 Odoo 1: a company is found ignoring capitals and extra spaces; a % or _ in a name is not a wildcard', async () => {
+  v2on();
+  partners.push({ id: 50, name: '[TEST] rao   ESTATES', is_company: true, active: true });
+  partners.push({ id: 51, name: '[TEST] AxBy', is_company: true, active: true });
+  await sendLead(leadBody({ company: '  Rao Estates ', whatsapp_number: '9822222222' }));
+  assert.strictEqual(companies().length, 2, 'no new company');
+  assert.strictEqual(people()[0].parent_id, 50);
+  await sendLead(leadBody({ company: 'A_B%', name: 'Bina Shah', whatsapp_number: '9833333333' }));
+  assert.strictEqual(companies().length, 3, '"A_B%" is a new company, not "AxBy"');
+  assert.ok(companies().some(c => c.name === '[TEST] A_B%'), 'kept exactly as typed');
+});
+
+test('V2 Odoo 1: two people from the same company share the company Contact, each with their own lead', async () => {
+  v2on();
+  await sendLead(leadBody({ name: 'Asha Rao', whatsapp_number: '9844444444' }));
+  await sendLead(leadBody({ name: 'Ravi Kumar', whatsapp_number: '9855555555' }));
+  assert.strictEqual(companies().length, 1);
+  assert.strictEqual(people().length, 2);
+  assert.strictEqual(leads.length, 2);
+  assert.notStrictEqual(leads[0].partner_id, leads[1].partner_id);
+  assert.ok(people().every(p => p.parent_id === companies()[0].id));
+});
+
+test('V2 Odoo 1: a lead for another service is left untouched (a new Warm-Chain lead is made); one with no service is used and tagged', async () => {
+  v2on();
+  const email = 'svc' + (++n) + '@example.com';
+  leads.push({ id: 60, name: '[TEST] Website job', active: true, stage_id: 1, email_from: email, [SVC]: [5], priority: '1' });
+  await sendLead(leadBody({ email, whatsapp_number: '9866666666' }));
+  const hand = leads.find(l => l.id === 60);
+  assert.deepStrictEqual(hand[SVC], [5]);
+  assert.ok(!hand.partner_id && hand.name === '[TEST] Website job', 'untouched');
+  assert.ok(notes.every(x => x.id !== 60), 'no note on it');
+  const wc = leads.find(l => l.id !== 60);
+  assert.deepStrictEqual(wc[SVC], [WC]);
+  assert.strictEqual(wc.partner_id, people()[0].id, 'the same Contact');
+
+  v2on();
+  const email2 = 'nosvc' + (++n) + '@example.com';
+  leads.push({ id: 61, name: '[TEST] Hand made', active: true, stage_id: 1, email_from: email2, priority: '1' });
+  await sendLead(leadBody({ email: email2, whatsapp_number: '9877777777' }));
+  assert.strictEqual(leads.length, 1, 'used, not a new lead');
+  assert.deepStrictEqual(leads[0][SVC], [WC], 'tagged');
+  assert.ok(leads[0].partner_id, 'its empty Contact is filled');
+  assert.strictEqual(leads[0].name, '[TEST] Hand made', 'a hand-made title is not changed');
+});
+
+test('V2 Odoo 1: several open leads: the Warm-Chain one wins; an open lead wins over a Lost one; a Lost one is reopened with the new title', async () => {
+  v2on();
+  const email = 'multi' + (++n) + '@example.com';
+  leads.push({ id: 62, name: '[TEST] Old WC', active: true, stage_id: 1, email_from: email, [SVC]: [WC], partner_id: 900 });
+  leads.push({ id: 63, name: '[TEST] Newer none', active: true, stage_id: 1, email_from: email });
+  leads.push({ id: 64, name: '[TEST] Lost one', active: false, stage_id: 2, email_from: email, lost_reason_id: 1 });
+  await sendLead(leadBody({ email, whatsapp_number: '9888888888' }));
+  assert.ok(notes.some(x => x.id === 62 && /^Filled the form again/.test(x.body)), 'the Warm-Chain lead is used');
+  assert.ok(!leads.find(l => l.id === 63)[SVC], 'the other open lead is untouched');
+  assert.strictEqual(leads.find(l => l.id === 64).active, false, 'the Lost one stays Lost');
+
+  v2on();
+  const email2 = 'lost' + (++n) + '@example.com';
+  leads.push({ id: 65, name: '[TEST] Old title (x)', active: false, stage_id: 2, email_from: email2, lost_reason_id: 1 });
+  leads.push({ id: 66, name: '[TEST] Other service lost', active: false, stage_id: 2, email_from: email2, [SVC]: [3], lost_reason_id: 1, date_closed: '2099-01-01 00:00:00' });
+  await sendLead(leadBody({ email: email2, whatsapp_number: '9899999999' }));
+  const back = leads.find(l => l.id === 65);
+  assert.strictEqual(back.active, true, 'reopened');
+  assert.strictEqual(back.name, '[TEST] Rao Estates – Warm-Chain System');
+  assert.deepStrictEqual(back[SVC], [WC]);
+  assert.ok(back.partner_id);
+  assert.strictEqual(leads.find(l => l.id === 66).active, false, 'a Lost lead for another service is never reopened');
+});
+
+test('V2 Odoo 1-2: Back with a changed company updates the title; a blank company is refused by the server and changes nothing', async () => {
+  v2on();
+  const b = leadBody({ whatsapp_number: '9810101010' });
+  await sendLead(b);
+  const r = await post('/api/lead', Object.assign({}, b, { company: '' }));
+  await settle();
+  assert.strictEqual(r.status, 400, 'a blank company never reaches Odoo');
+  assert.strictEqual(leads[0].partner_name, 'Rao Estates');
+  await sendLead(Object.assign({}, b, { company: 'Rao  Homes', q2_urgency: 'I am only exploring right now' }));
+  assert.strictEqual(leads.length, 1);
+  assert.strictEqual(leads[0].name, '[TEST] Rao Homes – Warm-Chain System');
+  assert.strictEqual(leads[0].partner_name, 'Rao Homes', 'extra spaces trimmed');
+  assert.strictEqual(leads[0].priority, '2', 'the new answer counts');
+});
+
+test('V2: a Contact that fails never fails the lead; a missing tag still makes the lead and alerts once', async () => {
+  v2on();
+  const b = leadBody({ whatsapp_number: '9820202020' });
+  odooFail = (model) => model === 'res.partner'; // Odoo refuses every Contact call
+  try { await sendLead(b); } finally { odooFail = null; }
+  assert.strictEqual(leadOf(b.email).length, 1, 'the lead is still made');
+  assert.ok(!leadOf(b.email)[0].partner_id);
+  assert.deepStrictEqual(leadOf(b.email)[0][SVC], [WC], 'and still tagged');
+
+  v2on();
+  tagExists = false;
+  const b2 = leadBody({ whatsapp_number: '9830303030' });
+  await sendLead(b2);
+  assert.strictEqual(leadOf(b2.email).length, 1);
+  assert.ok(!(leadOf(b2.email)[0][SVC] || []).length);
+  assert.strictEqual(sent.filter(s => s.subject === 'The Warm-Chain System tag is missing in Odoo').length, 1);
+});
+
+test('V2 Odoo 0: only our own reminders, by exact title, and only on a Warm-Chain lead, can ever be removed', async () => {
+  v2on();
+  leads.push({ id: 70, name: '[TEST] W', active: true, stage_id: 3, [SVC]: [WC] });
+  leads.push({ id: 71, name: '[TEST] Hand', active: true, stage_id: 3 });
+  for (const id of [70, 71]) {
+    acts.push({ id: ++seq, res_model: 'crm.lead', res_id: id, summary: 'WhatsApp: call-day reminder', date_deadline: isoDay(0), done: false });
+    acts.push({ id: ++seq, res_model: 'crm.lead', res_id: id, summary: 'Send the proposal', date_deadline: isoDay(0), done: false });
+  }
+  await assert.rejects(odoo.removeOurReminders(70, ['Send the proposal']), /Not one of our reminders/);
+  assert.strictEqual(await odoo.removeOurReminders(71, ['WhatsApp: call-day reminder']), 0, 'a lead without the tag is never touched');
+  assert.strictEqual(await odoo.removeOurReminders(70, ['WhatsApp: call-day reminder']), 1);
+  assert.deepStrictEqual(acts.filter(x => x.res_id === 70).map(x => x.summary), ['Send the proposal']);
+  assert.strictEqual(acts.filter(x => x.res_id === 71).length, 2);
+});
+
+test('V2 Odoo 4: Proposal Sent makes one to-do due today (To-Do type); not again after it is done; not on a lead without the tag; nothing with V2 off', async () => {
+  v2on();
+  const b = leadBody({ whatsapp_number: '9840404040' });
+  await sendLead(b);
+  const l = leads[0];
+  leads.push({ id: 72, name: '[TEST] Hand', active: true, stage_id: 1 });
+  await odoo.call('crm.lead', 'write', { ids: [l.id, 72], vals: { stage_id: STAGES['Proposal Sent'] } });
+  const todos = () => acts.filter(x => x.summary === 'Update Expected Revenue and MRR to the proposal amount');
+  await run();
+  assert.strictEqual(todos().length, 1);
+  assert.strictEqual(todos()[0].res_id, l.id);
+  assert.strictEqual(todos()[0].date_deadline, isoDay(0));
+  assert.strictEqual(todos()[0].typeId, 4, 'To-Do');
+  await run();
+  assert.strictEqual(todos().length, 1, 'no copy while it is open');
+  todos()[0].done = true;
+  await run();
+  assert.strictEqual(todos().length, 1, 'done stays done');
+
+  reset(); // V2 off
+  await sendLead(leadBody({ whatsapp_number: '9850505050' }));
+  await odoo.call('crm.lead', 'write', { ids: [leads[0].id], vals: { stage_id: STAGES['Proposal Sent'], [SVC]: [[4, WC]] } });
+  await run();
+  assert.strictEqual(todos().length, 0);
+  assert.ok(!odooCalls.some(c => c.model === 'crm.tag'), 'with V2 off the tag is never even looked up');
 });
