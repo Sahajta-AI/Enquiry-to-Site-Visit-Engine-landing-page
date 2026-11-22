@@ -152,7 +152,8 @@ function fakeOdoo(model, method, a) {
 }
 
 // ---------------- the rest of the world ----------------
-const sent = [], metaCalls = [];
+const sent = [], metaCalls = [], queued = [];
+const threadsFake = {}; // threadId -> [{ id, from }]
 let gmailDown = false;
 const calBookings = {}, calByEmail = {};
 global.fetch = async (url, opts) => {
@@ -195,14 +196,22 @@ global.fetch = async (url, opts) => {
     const uid = decodeURIComponent(url.split('/').pop());
     return calBookings[uid] ? json({ data: calBookings[uid] }) : json({}, 404);
   }
+  if (url.startsWith('https://api.cal.com/v2/bookings?') && !url.includes('sortCreated')) { // the plain search (has the person booked?)
+    const email = decodeURIComponent(url.match(/attendeeEmail=([^&]+)/)[1]);
+    return json({ data: calByEmail[email] || [] });
+  }
   if (url.startsWith('https://api.cal.com/v2/bookings?')) {
     assert.ok(url.includes('sortCreated=desc'), 'newest first');
     const email = decodeURIComponent(url.match(/attendeeEmail=([^&]+)/)[1]);
     return json({ data: calByEmail[email] || [] });
   }
-  if (url.includes('/v2/publish/')) return json({ messageId: 'q1' });
+  if (url.includes('/v2/publish/')) { queued.push(JSON.parse(opts.body).jobId); return json({ messageId: 'q1' }); }
   if (/\/messages\/m\d+\?format=metadata/.test(url)) return json({ payload: { headers: [{ name: 'Message-ID', value: '<x@mail.gmail.com>' }] } });
-  if (/\/threads\/t\d+/.test(url)) return json({ messages: [{ id: 'm1' }] });
+  if (/\/threads\/t\d+/.test(url)) {
+    const tid = url.match(/threads\/(t\d+)/)[1];
+    const list = threadsFake[tid] || [{ id: 'm1' }];
+    return json({ messages: list.map(m => ({ id: m.id, payload: { headers: [{ name: 'From', value: m.from || 'Shubhang Sethi <shubhang@sahajta.com>' }] } })) });
+  }
   if (url === 'https://api.resend.com/emails') return json({ id: 'r1' });
   throw new Error('Unmocked fetch: ' + url);
 };
@@ -222,7 +231,7 @@ const post = (p, body, headers) => realFetch(base + p, { method: 'POST', headers
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const settle = () => sleep(150); // the work after the reply (waitUntil) finishes
 
-function reset() { delete process.env.ODOO_V2; resetOdoo(); sent.length = 0; metaCalls.length = 0; store._resetMemory(); odoo._reset(); for (const k of Object.keys(calBookings)) delete calBookings[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; delete process.env.NEW_TRACKING; delete process.env.VERCEL_ENV; }
+function reset() { delete process.env.ODOO_V2; delete process.env.NUDGES_ENABLED; queued.length = 0; for (const k of Object.keys(threadsFake)) delete threadsFake[k]; resetOdoo(); sent.length = 0; metaCalls.length = 0; store._resetMemory(); odoo._reset(); for (const k of Object.keys(calBookings)) delete calBookings[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; delete process.env.NEW_TRACKING; delete process.env.VERCEL_ENV; }
 
 const Q1_FIT = 'We run paid ads but leads go cold because follow-up is slow';
 const Q2_FIT = 'As soon as possible';
@@ -930,8 +939,10 @@ test('V2 Odoo 1: several open leads: the Warm-Chain one wins; an open lead wins 
   leads.push({ id: 62, name: '[TEST] Old WC', active: true, stage_id: 1, email_from: email, [SVC]: [WC], partner_id: 900 });
   leads.push({ id: 63, name: '[TEST] Newer none', active: true, stage_id: 1, email_from: email });
   leads.push({ id: 64, name: '[TEST] Lost one', active: false, stage_id: 2, email_from: email, lost_reason_id: 1 });
-  await sendLead(leadBody({ email, whatsapp_number: '9888888888' }));
-  assert.ok(notes.some(x => x.id === 62 && /^Filled the form again/.test(x.body)), 'the Warm-Chain lead is used');
+  const visitBody = leadBody({ email, whatsapp_number: '9888888888' });
+  await sendLead(visitBody);
+  assert.deepStrictEqual(await store.get('odoovisit:' + visitBody.lead_event_id), { leadId: 62, kind: 'again' }, 'the Warm-Chain lead is used');
+  assert.ok(!notes.some(x => x.id === 62), 'Odoo 13: no note when the form is sent again (it comes with "didn\'t book")');
   assert.ok(!leads.find(l => l.id === 63)[SVC], 'the other open lead is untouched');
   assert.strictEqual(leads.find(l => l.id === 64).active, false, 'the Lost one stays Lost');
 
@@ -1214,4 +1225,192 @@ test('V2 Odoo 6: the Source line', () => {
   process.env.NEW_TRACKING = 'off';
   assert.strictEqual(ol.sourceLine({ utm_source: 'fb', utm_content: 'TC1.4.01 | IMG9 | TG1-CP2-A4' }), 'Source: Meta ad', 'no ad names while NEW_TRACKING is off');
   delete process.env.NEW_TRACKING;
+});
+
+// ---------------- ODOO_V2 step 4 (Notion "Odoo 7", "Odoo 13", "Odoo 14", "Odoo 15") ----------------
+const tasksMod = require(path.join(tmp, 'lib', 'tasks.js'));
+const leadsMod = require(path.join(tmp, 'lib', 'leads.js'));
+const signal = async (kind, id) => { const r = await (await post('/api/lead-signal', { kind, lead_event_id: id })).json(); await settle(); return r.result; };
+const notesStarting = (id, head) => notes.filter(x => x.id === id && x.body.startsWith(head));
+const leaveEmailsToShubhang = () => sent.filter(x => /^(Didn.t book|No times shown)/.test(x.subject));
+
+test('V2 Odoo 7: left without booking, nudges off: one "Filled the form, didn\'t book" note with the details and a follow-up reminder today; no email to Shubhang; booking later notes it once', async () => {
+  v2on();
+  process.env.NEW_TRACKING = 'on';
+  const b = leadBody({ whatsapp_number: '9823232323' });
+  await sendLead(b);
+  const l = leads[0];
+  assert.strictEqual(await signal('didnt_book', b.lead_event_id), 'noted');
+  const n = notesStarting(l.id, 'Filled the form, didn&#39;t book');
+  assert.strictEqual(n.length, 1);
+  const lines = n[0].body.split('<br>');
+  assert.deepStrictEqual(lines.slice(1, 4), ['Situation: We run ads, but leads go cold because follow-up is slow', 'Timeline: As soon as possible', 'Fit: Good']);
+  assert.match(lines[4], /^Source: Meta ad/);
+  assert.match(lines[5], /^Consent: \w{3} \d{1,2} \w{3}, \d{1,2}:\d{2} (am|pm)$/);
+  const f = openActs(l.id).filter(x => x.summary === 'WhatsApp: follow up (didn\'t book)');
+  assert.strictEqual(f.length, 1);
+  assert.strictEqual(f[0].date_deadline, isoDay(0));
+  assert.match(f[0].note, /No nudge emails went to them\. WhatsApp them to get the call booked\./);
+  assert.strictEqual(leaveEmailsToShubhang().length, 0, 'no "Didn\'t book" email: it is all in Odoo');
+
+  await bookV2('bk-v4a', b.email, inDays(3, 10).toISOString());
+  await settle();
+  assert.strictEqual(notes.filter(x => x.id === l.id && x.body === 'Booked a call: no WhatsApp follow-up needed').length, 1);
+  assert.ok(!openActs(l.id).some(x => x.summary === 'WhatsApp: follow up (didn\'t book)'), 'the follow-up reminder is removed');
+  assert.ok(!acts.some(x => x.done));
+});
+
+test('V2 Odoo 7: with nudges: no reminder now; the day after nudge 2: no booking and no reply -> follow-up reminder; a reply -> a note, then "Reply to their email" if Shubhang hasn\'t answered', async () => {
+  for (const scenario of ['no-reply', 'replied-unanswered', 'replied-answered', 'booked']) {
+    v2on();
+    process.env.NUDGES_ENABLED = '1';
+    const b = leadBody({ whatsapp_number: '9834343434' });
+    await sendLead(b);
+    const l = leads[0];
+    assert.strictEqual(await signal('didnt_book', b.lead_event_id), 'noted+nudges', scenario);
+    assert.strictEqual(notesStarting(l.id, 'Filled the form, didn&#39;t book').length, 1);
+    assert.ok(!openActs(l.id).some(x => x.summary === 'WhatsApp: follow up (didn\'t book)'), 'no reminder while the nudges run');
+    const code = (await store.get('nudgelead:' + b.lead_event_id)).code;
+    await store.update('nudge:' + code, { nudge1: { sentAt: Date.now(), gmailId: 'm70', threadId: 't70' }, nudge2: { sentAt: Date.now(), gmailId: 'm71' }, booked: scenario === 'booked' });
+    threadsFake.t70 = [{ id: 'm70' }, { id: 'm71' }];
+    if (scenario !== 'no-reply') threadsFake.t70.push({ id: 'm72', from: 'Asha Rao <' + b.email + '>' });
+    if (scenario === 'replied-answered') threadsFake.t70.push({ id: 'm73', from: 'Shubhang Sethi <shubhang@sahajta.com>' });
+    const r = await tasksMod.runNudgeCheck(code);
+    const follow = () => openActs(l.id).filter(x => x.summary === 'WhatsApp: follow up (didn\'t book)');
+    if (scenario === 'no-reply') {
+      assert.strictEqual(r, 'reminder');
+      assert.strictEqual(follow().length, 1);
+      assert.match(follow()[0].note, /Both nudge emails went, no booking and no reply\. WhatsApp them to get the call booked\./);
+      assert.strictEqual(await tasksMod.runNudgeCheck(code), 'duplicate');
+    } else if (scenario === 'booked') {
+      assert.strictEqual(r, 'booked');
+      assert.strictEqual(follow().length, 0);
+    } else {
+      assert.strictEqual(r, 'replied');
+      assert.strictEqual(follow().length, 0, 'no follow-up reminder after a reply');
+      assert.ok(notes.some(x => x.id === l.id && x.body === 'Replied to the nudge email: no WhatsApp follow-up needed'));
+      const rr = await tasksMod.runReplyCheck(code);
+      const replyTodo = openActs(l.id).filter(x => x.summary === 'Reply to their email');
+      if (scenario === 'replied-answered') { assert.strictEqual(rr, 'answered'); assert.strictEqual(replyTodo.length, 0); } else {
+        assert.strictEqual(rr, 'reminder'); assert.strictEqual(replyTodo.length, 1); assert.ok(!replyTodo[0].note, 'no description');
+      }
+    }
+  }
+});
+
+test('V2 Odoo 7: the 2-hour check: queued with the form; no booking -> the "didn\'t book" steps once; a booking in Cal.com -> nothing', async () => {
+  v2on();
+  const b = leadBody({ whatsapp_number: '9845454545' });
+  await sendLead(b);
+  const jobs = await Promise.all(queued.map(id => store.get('job:' + id)));
+  const check = jobs.find(j => j && j.kind === 'didnt-book-check');
+  assert.ok(check && check.payload.key === b.lead_event_id, 'queued when the form was sent');
+  assert.ok(Math.abs(check.runAt - (Date.now() + 2 * 3600 * 1000)) < 60000, 'for 2 hours later');
+  assert.strictEqual(await leadsMod.runDidntBookCheck(b.lead_event_id), 'noted');
+  await settle();
+  assert.strictEqual(notesStarting(leads[0].id, 'Filled the form, didn&#39;t book').length, 1);
+  assert.strictEqual(await signal('didnt_book', b.lead_event_id), 'duplicate', 'the real signal later does nothing more');
+  assert.strictEqual(await leadsMod.runDidntBookCheck(b.lead_event_id), 'duplicate');
+
+  v2on();
+  const b2 = leadBody({ whatsapp_number: '9856565656' });
+  await sendLead(b2);
+  calByEmail[b2.email] = [{ uid: 'x', createdAt: new Date().toISOString(), start: inDays(2, 10).toISOString(), status: 'accepted' }];
+  assert.strictEqual(await leadsMod.runDidntBookCheck(b2.lead_event_id), 'skipped:booked');
+  await settle();
+  assert.strictEqual(notes.length, 0);
+
+  reset(); // V2 off: never queued
+  await sendLead(leadBody({ whatsapp_number: '9867676767' }));
+  const offJobs = await Promise.all(queued.map(id => store.get('job:' + id)));
+  assert.ok(!offJobs.some(j => j && j.kind === 'didnt-book-check'));
+});
+
+test('V2 Odoo 13: fills the form again: no note now; didn\'t book -> "Filled the form again, didn\'t book" + follow-up today, no new nudges; call already booked -> a note and "Check why they filled the form again"', async () => {
+  v2on();
+  process.env.NUDGES_ENABLED = '1';
+  const email = 'again' + (++n) + '@example.com';
+  leads.push({ id: 110, name: '[TEST] Rao Estates – Warm-Chain System', active: true, stage_id: 2, email_from: email, [SVC]: [WC], partner_id: 990 });
+  acts.push({ id: ++seq, res_model: 'crm.lead', res_id: 110, summary: 'WhatsApp: follow up (didn\'t book)', date_deadline: isoDay(-3), done: false, note: 'old' });
+  const b = leadBody({ email, whatsapp_number: '9878787878' });
+  await sendLead(b);
+  assert.strictEqual(notes.length, 0, 'no note when the form is sent again');
+  assert.strictEqual(await signal('didnt_book', b.lead_event_id), 'noted-again');
+  const nn = notesStarting(110, 'Filled the form again, didn&#39;t book');
+  assert.strictEqual(nn.length, 1);
+  assert.ok(!nn[0].body.includes('Consent:'));
+  const f = openActs(110).filter(x => x.summary === 'WhatsApp: follow up (didn\'t book)');
+  assert.strictEqual(f.length, 1, 'the open one is moved, not copied');
+  assert.strictEqual(f[0].date_deadline, isoDay(0));
+  assert.match(f[0].note, /Filled the form again but didn&#39;t book\. WhatsApp them to get the call booked\./);
+  assert.ok(!(await store.get('nudgelead:' + b.lead_event_id)), 'no new nudges');
+
+  v2on();
+  const email2 = 'againbooked' + (++n) + '@example.com';
+  leads.push({ id: 111, name: '[TEST] Rao Estates – Warm-Chain System', active: true, stage_id: 3, email_from: email2, [SVC]: [WC], partner_id: 991 });
+  const callAt = inDays(2, 10);
+  calByEmail[email2] = [{ uid: 'y', createdAt: new Date().toISOString(), start: callAt.toISOString(), status: 'accepted' }];
+  const b2 = leadBody({ email: email2, whatsapp_number: '9889898989' });
+  await sendLead(b2);
+  const c = notesStarting(111, 'Filled the form again (call already booked: ');
+  assert.strictEqual(c.length, 1);
+  assert.deepStrictEqual(titlesOf(111), ['Check why they filled the form again']);
+  assert.strictEqual(await signal('didnt_book', b2.lead_event_id), 'skipped:call-booked');
+  assert.strictEqual(notes.filter(x => x.id === 111).length, 1, 'nothing more');
+});
+
+test('V2 Odoo 14: a Lost lead comes back: reopened with one "Came back (was Lost: …, on …)" note and "Came back: read the history first" today; a past client gets a new lead, its to-do and "Past client" first', async () => {
+  v2on();
+  const email = 'back' + (++n) + '@example.com';
+  leads.push({ id: 120, name: '[TEST] Old (x)', active: false, stage_id: 2, email_from: email, lost_reason_id: 1, date_closed: '2026-11-21 04:00:00' });
+  const b = leadBody({ email, whatsapp_number: '9890101010' });
+  await sendLead(b);
+  const l = leads.find(x => x.id === 120);
+  assert.strictEqual(l.active, true);
+  assert.strictEqual(l.stage_id, STAGES.New);
+  const cb = notesStarting(120, 'Came back (was Lost: Too expensive, on Sat 21 Nov)');
+  assert.strictEqual(cb.length, 1);
+  assert.ok(cb[0].body.includes('Situation: We run ads, but leads go cold because follow-up is slow'));
+  const r = openActs(120).filter(x => x.summary === 'Came back: read the history first');
+  assert.strictEqual(r.length, 1, 'one, even though Odoo\'s own rule (on until go-live) may add its copy too') ;
+  assert.ok(!acts.some(x => x.done), 'nothing marked Done');
+
+  v2on();
+  const email2 = 'past' + (++n) + '@example.com';
+  leads.push({ id: 121, name: '[TEST] Won deal', active: true, stage_id: 6, email_from: email2, [SVC]: [WC] });
+  const b2 = leadBody({ email: email2, whatsapp_number: '9801212121' });
+  await sendLead(b2);
+  const nl = leads.find(x => x.id !== 121);
+  assert.ok(nl && nl.name === '[TEST] Rao Estates – Warm-Chain System', 'a new Warm-Chain lead');
+  assert.deepStrictEqual(titlesOf(nl.id).filter(x => x.startsWith('Past client')), ['Past client is back: check what they need']);
+  await signal('didnt_book', b2.lead_event_id);
+  const first = notes.filter(x => x.id === nl.id)[0];
+  assert.match(first.body, /^Past client<br>Filled the form, didn&#39;t book<br>/);
+});
+
+test('V2 Odoo 15: Back with changed details: no note, the Contact takes the latest details; open times didn\'t load: one note, one reminder, no email, and no "didn\'t book" steps after it', async () => {
+  v2on();
+  const b = leadBody({ whatsapp_number: '9812343434' });
+  await sendLead(b);
+  await sendLead(Object.assign({}, b, { name: 'Asha R. Rao', company: 'Rao Homes' }));
+  assert.ok(!notes.some(x => /Details changed/.test(x.body)), 'no "Details changed" note');
+  const person = partners.find(x => x.id === leads[0].partner_id);
+  assert.strictEqual(person.name, '[TEST] Asha R. Rao');
+  assert.strictEqual(partners.find(x => x.id === person.parent_id).name, '[TEST] Rao Homes');
+  assert.strictEqual(leads[0].name, '[TEST] Rao Homes – Warm-Chain System');
+
+  v2on();
+  process.env.NUDGES_ENABLED = '1';
+  const b2 = leadBody({ whatsapp_number: '9823454545' });
+  await sendLead(b2);
+  const l = leads[0];
+  assert.strictEqual(await signal('no_times', b2.lead_event_id), 'noted');
+  await settle();
+  assert.strictEqual(notesStarting(l.id, 'Couldn&#39;t see open times on the booking form').length, 1);
+  assert.deepStrictEqual(titlesOf(l.id).filter(x => x.startsWith('WhatsApp: share')), ['WhatsApp: share open times (the booking form didn\'t load)']);
+  assert.strictEqual(leaveEmailsToShubhang().length, 0, 'no "No times shown" email');
+  assert.strictEqual(await leadsMod.runDidntBookCheck(b2.lead_event_id), 'skipped:no-times', 'the 2-hour check');
+  assert.strictEqual(await signal('didnt_book', b2.lead_event_id), 'duplicate', 'and the real signal after it');
+  assert.ok(!notes.some(x => x.body.startsWith('Filled the form')), 'no "didn\'t book" note');
+  assert.ok(!(await store.get('nudgelead:' + b2.lead_event_id)), 'no nudges');
 });
