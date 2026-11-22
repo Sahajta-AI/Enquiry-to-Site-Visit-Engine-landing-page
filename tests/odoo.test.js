@@ -128,7 +128,7 @@ function fakeOdoo(model, method, a) {
     }
     if (method === 'message_post') { notes.push({ mid: ++seq, id: a.ids[0], body: a.body, html: a.body_is_html, type: a.message_type, subtype: a.subtype_xmlid }); return 1; }
     if (method === 'activity_schedule') {
-      acts.push({ id: ++seq, res_model: 'crm.lead', res_id: a.ids[0], summary: a.summary, date_deadline: a.date_deadline, done: false, typeId: a.activity_type_id, user: a.user_id });
+      acts.push({ id: ++seq, res_model: 'crm.lead', res_id: a.ids[0], summary: a.summary, date_deadline: a.date_deadline, done: false, typeId: a.activity_type_id, user: a.user_id, note: a.note });
       return true;
     }
   }
@@ -142,7 +142,7 @@ function fakeOdoo(model, method, a) {
       if (ids) return acts.filter(x => !x.done && ids[2].includes(x.id)).map(x => ({ id: x.id }));
       const want = Object.fromEntries(a.domain.map(d => [d[0], d[2]]));
       const inList = a.domain.find(d => d[0] === 'summary' && d[1] === 'in');
-      return acts.filter(x => !x.done && x.res_model === want.res_model && x.res_id === want.res_id && (inList ? inList[2].includes(x.summary) : x.summary === want.summary)).map(x => ({ id: x.id, summary: x.summary }));
+      return acts.filter(x => !x.done && x.res_model === want.res_model && x.res_id === want.res_id && (inList ? inList[2].includes(x.summary) : x.summary === want.summary) && (!want.date_deadline || x.date_deadline === want.date_deadline)).map(x => ({ id: x.id, summary: x.summary, date_deadline: x.date_deadline }));
     }
     if (method === 'unlink') { acts = acts.filter(x => !a.ids.includes(x.id)); return true; }
     if (method === 'write') { a.ids.forEach(id => Object.assign(acts.find(x => x.id === id), a.vals)); return true; }
@@ -1011,4 +1011,190 @@ test('V2 Odoo 4: Proposal Sent makes one to-do due today (To-Do type); not again
   await run();
   assert.strictEqual(todos().length, 0);
   assert.ok(!odooCalls.some(c => c.model === 'crm.tag'), 'with V2 off the tag is never even looked up');
+});
+
+// ---------------- ODOO_V2 step 3 (Notion "Odoo 5", "Odoo 6", "Odoo 8" to "Odoo 11") ----------------
+const BOOK_NOTES = 'Company or project: Rao Estates\nWhatsApp: +91 98765 43210\nWhat\'s happening right now: We run paid ads but leads go cold because follow-up is slow\nWhen they\'d want it running: As soon as possible';
+const adMeta = (uid, over) => Object.assign({ lead_event_id: 'lead-' + uid, consent_at: '2026-11-21T04:02:00.000Z', utm_source: 'fb', utm_content: 'TC1.4.01 | IMG9 | TG1-CP2-A4 | 21Nov26 [L:5cnx8-01]', utm_campaign: 'TC1.0' }, over || {});
+const bookV2 = (uid, email, startIso, over) => hook('BOOKING_CREATED', uid, email, startIso, Object.assign({ metadata: adMeta(uid), responses: { notes: { value: BOOK_NOTES } } }, over || {}));
+const openActs = (id) => acts.filter(x => x.res_id === id && !x.done);
+const titlesOf = (id) => openActs(id).map(x => x.summary).sort();
+const dayOf = (d) => new Date(d.getTime() + 5.5 * 3600000).toISOString().slice(0, 10);
+
+test('V2 Odoo 8: a booked call: one "Call booked" note with the details, the 3 reminders, old follow-ups removed (never Done) with one note', async () => {
+  v2on();
+  process.env.NEW_TRACKING = 'on';
+  const b = leadBody({ whatsapp_number: '9860606060' });
+  await sendLead(b);
+  const l = leads[0];
+  assert.strictEqual(notes.filter(x => x.id === l.id).length, 0, 'no note when the form is sent');
+  assert.deepStrictEqual(titlesOf(l.id), ['WhatsApp follow-up'], 'Odoo\'s own rule (still on until go-live) added its old follow-up');
+  const start = inDays(3, 10);
+  await bookV2('bk-v3a', b.email, start.toISOString());
+  await settle();
+  const booked = notes.filter(x => x.id === l.id && x.body.startsWith('Call booked: '));
+  assert.strictEqual(booked.length, 1);
+  const lines = booked[0].body.split('<br>');
+  assert.match(lines[0], /^Call booked: \w{3} \d{1,2} \w{3}, \d{1,2}:\d{2} (am|pm)$/);
+  assert.deepStrictEqual(lines.slice(1), [
+    'Situation: We run ads, but leads go cold because follow-up is slow', 'Timeline: As soon as possible', 'Fit: Good',
+    'Source: Meta ad IMG9 (TG1-CP2-A4), ad set TC1.4, campaign TC1.0', 'Consent: Sat 21 Nov, 9:32 am'
+  ]);
+  assert.ok(notes.some(x => x.id === l.id && x.body === 'Booked a call: no WhatsApp follow-up needed'));
+  assert.deepStrictEqual(titlesOf(l.id), ['After the call: update the stage', 'WhatsApp: call-day reminder', 'WhatsApp: personal message (evening before the call)']);
+  const by = (t) => openActs(l.id).find(x => x.summary === t);
+  assert.strictEqual(by('WhatsApp: personal message (evening before the call)').date_deadline, dayOf(new Date(start.getTime() - 86400000)));
+  assert.strictEqual(by('WhatsApp: call-day reminder').date_deadline, dayOf(start));
+  assert.strictEqual(by('After the call: update the stage').date_deadline, dayOf(start));
+  assert.match(by('WhatsApp: personal message (evening before the call)').note, /Send around 7–8 pm\. Confirm the time and share the Meet link\./);
+  assert.match(by('WhatsApp: call-day reminder').note, /Send in the morning\./);
+  assert.match(by('After the call: update the stage').note, /Held: Qualified, or Lost \(Junk\)\. Missed: back to Replied\. Never rebooks: Lost \(No-show\)\./);
+  assert.strictEqual(by('After the call: update the stage').typeId, 4, 'To-Do');
+  assert.ok(!acts.some(x => x.done), 'nothing ever marked Done');
+  assert.ok(!odooCalls.some(c => c.method === 'action_feedback'));
+  assert.strictEqual(leads[0].expected_revenue, 99000);
+  await bookV2('bk-v3a', b.email, start.toISOString()); // the same webhook again
+  await settle();
+  assert.strictEqual(notes.filter(x => x.id === l.id && x.body.startsWith('Call booked: ')).length, 1);
+  assert.strictEqual(openActs(l.id).length, 3, 'no second set');
+});
+
+test('V2 Odoo 8: an organic lead (no ad) gets the same reminders; the Source line says Website', async () => {
+  v2on();
+  const b = leadBody({ whatsapp_number: '9870707070', sv_attrib: {} });
+  await sendLead(b);
+  await hook('BOOKING_CREATED', 'bk-v3b', b.email, inDays(3, 10).toISOString(), { responses: { notes: { value: BOOK_NOTES } } });
+  await settle();
+  const l = leads[0];
+  assert.strictEqual(openActs(l.id).length, 3);
+  assert.ok(notes.some(x => x.id === l.id && x.body.includes('Source: Website (no ad click)')));
+});
+
+test('V2 Odoo 8: reminder timing: booked the evening before (after 8 pm) or on the call day skips reminder 1; on the call day, "as soon as you see this"', async () => {
+  v2on();
+  leads.push({ id: 90, name: '[TEST] T', active: true, stage_id: 3, [SVC]: [WC] });
+  const lead = { id: 90, user_id: [7, 'Shubhang Sethi'] };
+  const start = new Date('2026-11-27T10:05:00.000Z'); // Fri 27 Nov, 3:35 pm IST
+  await ol._ensureCallReminders(lead, start, new Date('2026-11-26T15:00:00.000Z')); // Thu 8:30 pm IST
+  assert.deepStrictEqual(titlesOf(90), ['After the call: update the stage', 'WhatsApp: call-day reminder']);
+  assert.match(openActs(90).find(x => x.summary === 'WhatsApp: call-day reminder').note, /Send in the morning/);
+  acts = [];
+  await ol._ensureCallReminders(lead, start, new Date('2026-11-27T03:00:00.000Z')); // Fri 8:30 am IST: the call day
+  assert.deepStrictEqual(titlesOf(90), ['After the call: update the stage', 'WhatsApp: call-day reminder']);
+  assert.match(openActs(90).find(x => x.summary === 'WhatsApp: call-day reminder').note, /Send as soon as you see this\. Remind them of today&#39;s call time\./);
+  acts = [];
+  await ol._ensureCallReminders(lead, start, new Date('2026-11-26T13:00:00.000Z')); // Thu 6:30 pm IST
+  assert.strictEqual(openActs(90).length, 3, 'before 8 pm the evening before: all three');
+});
+
+test('V2 Odoo 9: a moved call: one "Call moved: old → new" note; the reminders follow the new time; one Shubhang marked Done is made again', async () => {
+  v2on();
+  const b = leadBody({ whatsapp_number: '9880808080' });
+  await sendLead(b);
+  const first = inDays(3, 10); const later = inDays(5, 6);
+  await bookV2('bk-v3c', b.email, first.toISOString());
+  await settle();
+  const l = leads[0];
+  openActs(l.id).find(x => x.summary === 'WhatsApp: call-day reminder').done = true; // Shubhang marked it Done
+  await hook('BOOKING_RESCHEDULED', 'bk-v3c2', b.email, later.toISOString(), { rescheduleUid: 'bk-v3c', rescheduleStartTime: first.toISOString(), metadata: adMeta('bk-v3c2'), responses: { notes: { value: BOOK_NOTES } } });
+  await settle();
+  const moved = notes.filter(x => x.id === l.id && x.body.startsWith('Call moved'));
+  assert.strictEqual(moved.length, 1);
+  assert.match(moved[0].body, /^Call moved: \w{3} \d{1,2} \w{3}, \d{1,2}:\d{2} (am|pm) → \w{3} \d{1,2} \w{3}, \d{1,2}:\d{2} (am|pm)$/);
+  assert.strictEqual(openActs(l.id).length, 3);
+  assert.ok(openActs(l.id).every(x => x.date_deadline === dayOf(later) || (x.summary.includes('evening') && x.date_deadline === dayOf(new Date(later.getTime() - 86400000)))), 'all at the new dates');
+  assert.ok(openActs(l.id).some(x => x.summary === 'WhatsApp: call-day reminder'), 'the Done one is made again for the new time');
+  assert.strictEqual(leads[0].stage_id, STAGES['Call Scheduled']);
+  assert.strictEqual(leads[0].expected_revenue, 99000);
+});
+
+test('V2 Odoo 11: a cancelled call: one note (by them / by you, reason when given), call reminders removed, back to Replied, revenue kept, one rebook reminder', async () => {
+  v2on();
+  const b = leadBody({ whatsapp_number: '9890909090' });
+  await sendLead(b);
+  await bookV2('bk-v3d', b.email, inDays(3, 10).toISOString());
+  await settle();
+  const l = leads[0];
+  await hook('BOOKING_CANCELLED', 'bk-v3d', b.email, inDays(3, 10).toISOString(), { cancellationReason: 'Something came up', cancelledBy: b.email, organizer: { email: 'shubhang@sahajta.com' } });
+  await settle();
+  const c = notes.filter(x => x.id === l.id && x.body.startsWith('Call cancelled'));
+  assert.strictEqual(c.length, 1);
+  assert.deepStrictEqual(c[0].body.split('<br>').slice(1), ['Cancelled by: them', 'Reason: Something came up']);
+  assert.deepStrictEqual(titlesOf(l.id), ['WhatsApp: get the call rebooked'], 'the call reminders are gone, one rebook reminder');
+  assert.ok(!acts.some(x => x.done), 'none marked Done');
+  assert.strictEqual(leads[0].stage_id, STAGES.Replied);
+  assert.strictEqual(leads[0].expected_revenue, 99000, 'revenue stays');
+  assert.match(openActs(l.id)[0].note, /They cancelled the call\. WhatsApp them to book a new time\./);
+
+  v2on();
+  const b2 = leadBody({ whatsapp_number: '9801010101' });
+  await sendLead(b2);
+  await bookV2('bk-v3e', b2.email, inDays(3, 10).toISOString());
+  await hook('BOOKING_CANCELLED', 'bk-v3e', b2.email, inDays(3, 10).toISOString(), { cancelledBy: 'shubhang@sahajta.com', organizer: { email: 'Shubhang@sahajta.com' } });
+  await settle();
+  const c2 = notes.filter(x => x.body.startsWith('Call cancelled'));
+  assert.deepStrictEqual(c2[0].body.split('<br>').slice(1), ['Cancelled by: you'], 'no Reason line when none was given');
+  assert.deepStrictEqual(titlesOf(leads[0].id), ['WhatsApp: get the call rebooked'], 'also when Shubhang cancelled');
+});
+
+test('V2 Odoo 6: emails Gmail accepted go into the lead\'s log once ("Email sent: …", a blank line, the full text); not for a lead without the tag; nothing with V2 off', async () => {
+  v2on();
+  const b = leadBody({ whatsapp_number: '9812121212' });
+  await sendLead(b);
+  await bookV2('bk-v3f', b.email, inDays(3, 10).toISOString());
+  await settle();
+  const l = leads[0];
+  const logged = notes.filter(x => x.id === l.id && x.body.startsWith('Email sent: '));
+  assert.strictEqual(logged.length, 1, 'the booking email, once');
+  assert.match(logged[0].body, /^Email sent: Your Lead Conversion Clarity Call is scheduled for .*<br><br>Hi Asha, it’s Shubhang/);
+  assert.ok(logged[0].body.includes('<br>'), 'line breaks kept');
+
+  assert.strictEqual(await ol.logEmail({ key: 'nudge1:x1', email: b.email, test: true, subject: 'One step left', text: 'Line 1\nLine 2 <b>' }), 'logged');
+  assert.ok(notes.some(x => x.id === l.id && x.body === 'Email sent: One step left<br><br>Line 1<br>Line 2 &lt;b&gt;'));
+  assert.strictEqual(await ol.logEmail({ key: 'nudge1:x1', email: b.email, test: true, subject: 'One step left', text: 'again' }), 'duplicate');
+  leads.push({ id: 95, name: '[TEST] Hand', active: true, stage_id: 1, email_from: 'hand@example.com' });
+  assert.strictEqual(await ol.logEmail({ key: 'nudge1:x2', email: 'hand@example.com', test: true, subject: 's', text: 't' }), 'no-lead', 'a lead without the tag gets nothing');
+
+  reset();
+  const before = odooCalls.length;
+  assert.strictEqual(await ol.logEmail({ key: 'nudge1:x3', email: b.email, test: true, subject: 's', text: 't' }), 'off');
+  assert.strictEqual(odooCalls.length, before);
+});
+
+test('V2 Odoo 6: a booking made straight in Cal.com (no lead yet): the booking email is logged once the lead is made', async () => {
+  v2on();
+  const email = 'direct' + (++n) + '@example.com';
+  await hook('BOOKING_CREATED', 'bk-v3g', email, inDays(3, 10).toISOString());
+  await settle();
+  const [l] = leadOf(email);
+  assert.ok(l, 'a lead was made from the booking');
+  assert.strictEqual(notes.filter(x => x.id === l.id && x.body.startsWith('Email sent: ')).length, 1);
+  assert.strictEqual(l.name, '[TEST] Rao Estates – Warm-Chain System');
+});
+
+test('V2 Odoo 10: a Warm-Chain lead marked Lost loses our open reminders (no note, none Done); others are untouched', async () => {
+  v2on();
+  leads.push({ id: 96, name: '[TEST] Lost WC', active: false, stage_id: 2, [SVC]: [WC], write_date: new Date().toISOString().slice(0, 19).replace('T', ' ') });
+  leads.push({ id: 97, name: '[TEST] Lost hand', active: false, stage_id: 2, write_date: new Date().toISOString().slice(0, 19).replace('T', ' ') });
+  for (const id of [96, 97]) {
+    acts.push({ id: ++seq, res_model: 'crm.lead', res_id: id, summary: 'WhatsApp: call-day reminder', date_deadline: isoDay(0), done: false });
+    acts.push({ id: ++seq, res_model: 'crm.lead', res_id: id, summary: 'Send the proposal', date_deadline: isoDay(0), done: false });
+  }
+  await run();
+  assert.deepStrictEqual(titlesOf(96), ['Send the proposal'], 'only ours removed');
+  assert.strictEqual(openActs(97).length, 2, 'a lead without the tag is untouched');
+  assert.ok(!notes.some(x => [96, 97].includes(x.id)), 'no note');
+});
+
+test('V2 Odoo 6: the Source line', () => {
+  process.env.NEW_TRACKING = 'on';
+  assert.strictEqual(ol.sourceLine({ utm_source: 'fb', utm_content: 'TC1.4.01 | IMG9 | TG1-CP2-A4 | 21Nov26 [L:5cnx8-01]', utm_campaign: 'TC1.0' }),
+    'Source: Meta ad IMG9 (TG1-CP2-A4), ad set TC1.4, campaign TC1.0');
+  assert.strictEqual(ol.sourceLine({ utm_source: 'fb', utm_content: 'TC1.4.01 | IMG9 | TG1-CP2-A4', utm_campaign: 'TC1.0', angle: 'speed' }),
+    'Source: Meta ad IMG9 (TG1-CP2-A4), ad set TC1.4, campaign TC1.0, angle: speed');
+  assert.strictEqual(ol.sourceLine({}), 'Source: Website (no ad click)');
+  assert.strictEqual(ol.sourceLine({}, true), 'Source: Meta ad', 'a Meta lead whose booking has no ad details');
+  process.env.NEW_TRACKING = 'off';
+  assert.strictEqual(ol.sourceLine({ utm_source: 'fb', utm_content: 'TC1.4.01 | IMG9 | TG1-CP2-A4' }), 'Source: Meta ad', 'no ad names while NEW_TRACKING is off');
+  delete process.env.NEW_TRACKING;
 });
