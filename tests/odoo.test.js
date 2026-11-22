@@ -69,7 +69,7 @@ function shape(l) {
     stage_id: [l.stage_id, stageName(l.stage_id)], lost_reason_id: l.lost_reason_id ? [l.lost_reason_id, 'Too expensive'] : false,
     user_id: [7, 'Shubhang Sethi'], email_normalized: l.email_from ? l.email_from.toLowerCase() : false,
     phone_sanitized: l.phone || false, partner_id: l.partner_id ? [l.partner_id, 'Contact'] : false, [SVC]: l[SVC] || [],
-    expected_revenue: l.expected_revenue || 0
+    expected_revenue: l.expected_revenue || 0, recurring_revenue: l.recurring_revenue || 0
   });
 }
 function fakeOdoo(model, method, a) {
@@ -846,15 +846,25 @@ test('V2 Odoo 4: a booking sets Expected Revenue and Recurring Revenues to 99,00
   assert.strictEqual(l.recurring_plan, 1, 'Monthly, found by name');
 });
 
-test('V2 Odoo 4: an amount already in Expected Revenue is never overwritten by a booking', async () => {
+test('V2 Odoo 4: an amount already in Expected Revenue or MRR is never overwritten by a booking; each is checked on its own', async () => {
   v2on();
   const email = 'paid' + (++n) + '@example.com';
   leads.push({ id: 80, name: '[TEST] Paid Co – Warm-Chain System', active: true, stage_id: 2, email_from: email, [SVC]: [WC], expected_revenue: 150000, partner_id: 999 });
   await hook('BOOKING_CREATED', 'bk-v2b', email, inDays(2, 10).toISOString());
   await settle();
   assert.strictEqual(leads[0].stage_id, STAGES['Call Scheduled']);
-  assert.strictEqual(leads[0].expected_revenue, 150000);
-  assert.ok(!('recurring_revenue' in leads[0]));
+  assert.strictEqual(leads[0].expected_revenue, 150000, 'Expected Revenue kept');
+  assert.strictEqual(leads[0].recurring_revenue, 99000, 'MRR was 0, so it is set');
+  assert.strictEqual(leads[0].recurring_plan, 1);
+
+  v2on();
+  const email2 = 'mrr' + (++n) + '@example.com';
+  leads.push({ id: 81, name: '[TEST] MRR Co – Warm-Chain System', active: true, stage_id: 2, email_from: email2, [SVC]: [WC], recurring_revenue: 45000, recurring_plan: 2, partner_id: 998 });
+  await hook('BOOKING_CREATED', 'bk-v2c', email2, inDays(2, 10).toISOString());
+  await settle();
+  assert.strictEqual(leads[0].expected_revenue, 99000, 'Expected Revenue was 0, so it is set');
+  assert.strictEqual(leads[0].recurring_revenue, 45000, 'MRR kept');
+  assert.strictEqual(leads[0].recurring_plan, 2, 'its plan kept too');
 });
 
 test('V2 Odoo 1: the same email or phone again reuses the Contact and the lead; a saved email is never replaced', async () => {
@@ -1192,6 +1202,13 @@ test('V2 Odoo 6: the Source line', () => {
     'Source: Meta ad IMG9 (TG1-CP2-A4), ad set TC1.4, campaign TC1.0');
   assert.strictEqual(ol.sourceLine({ utm_source: 'fb', utm_content: 'TC1.4.01 | IMG9 | TG1-CP2-A4', utm_campaign: 'TC1.0', angle: 'speed' }),
     'Source: Meta ad IMG9 (TG1-CP2-A4), ad set TC1.4, campaign TC1.0, angle: speed');
+  // Shubhang (22 Nov): the ad number can be "TC1.4.1" or "TC1.4.01"; ad set and campaign names are "TC1.4 | …", "TC1.0 | …"
+  for (const num of ['TC1.4.1', 'TC1.4.01']) {
+    assert.strictEqual(ol.sourceLine({ utm_source: 'fb', utm_content: `${num} | IMG9 | TG1-CP2-A4 | 21Nov26 [L:5cnx8-01]`, utm_campaign: 'TC1.0' }),
+      'Source: Meta ad IMG9 (TG1-CP2-A4), ad set TC1.4, campaign TC1.0', num);
+  }
+  assert.strictEqual(ol.sourceLine({ utm_source: 'fb', utm_content: 'TC1.4.1 | IMG9 | TG1-CP2-A4', utm_term: 'TC1.4 | Builders | Mumbai', utm_campaign: 'TC1.0 | Warm-Chain | Nov' }),
+    'Source: Meta ad IMG9 (TG1-CP2-A4), ad set TC1.4, campaign TC1.0', 'the part before the first " | "');
   assert.strictEqual(ol.sourceLine({}), 'Source: Website (no ad click)');
   assert.strictEqual(ol.sourceLine({}, true), 'Source: Meta ad', 'a Meta lead whose booking has no ad details');
   process.env.NEW_TRACKING = 'off';
