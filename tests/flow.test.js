@@ -39,6 +39,7 @@ const calStatus = {};      // uid -> status
 const calEventType = {};   // uid -> event type id, when not the test event
 const rescheduleCalls = []; const takenStarts = []; const refuseStarts = []; let noNewUid = false;
 const calStart = {};       // uid -> start time, when it differs from the webhook's
+const calNoMeet = new Set(); // uids whose booking has no Meet link
 const calByEmail = {};     // email -> [{createdAt,start,status}]
 let gmailFailures = 0;
 let gmailFailStatus = 500; // the status of a failing Gmail answer (a 4xx is a clear refusal, a 5xx may have sent it)
@@ -78,7 +79,7 @@ global.fetch = async (url, opts) => {
   }
   if (/api\.cal\.com\/v2\/bookings\/[^?]+$/.test(url) && (opts.method || 'GET') === 'GET') {
     const uid = decodeURIComponent(url.split('/').pop());
-    return json({ data: { status: calStatus[uid] || 'accepted', start: calStart[uid] || '2026-11-11T10:35:00.000Z', meetingUrl: 'https://meet.google.com/live-link', eventTypeId: calEventType[uid] || 7785231, ...(uid === 'bk-move' ? { attendees: [{ email: 'move@example.com' }] } : {}) } });
+    return json({ data: { status: calStatus[uid] || 'accepted', start: calStart[uid] || '2026-11-11T10:35:00.000Z', meetingUrl: calNoMeet.has(uid) ? '' : 'https://meet.google.com/live-link', eventTypeId: calEventType[uid] || 7785231, ...(uid === 'bk-move' ? { attendees: [{ email: 'move@example.com' }] } : {}) } });
   }
   if (/api\.cal\.com\/v2\/bookings\/[^/?]+\/reschedule$/.test(url) && opts.method === 'POST') {
     const uid = decodeURIComponent(url.split('/').slice(-2)[0]);
@@ -177,7 +178,7 @@ async function runQueue(until) {
     results.push((await r.json()).result);
   }
 }
-const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calEventType)) delete calEventType[k]; rescheduleCalls.length = 0; takenStarts.length = 0; refuseStarts.length = 0; noNewUid = false; for (const k of Object.keys(calStart)) delete calStart[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; gmailFailStatus = 500; gmailLateReply = false; publishDown = false; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; };
+const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calEventType)) delete calEventType[k]; rescheduleCalls.length = 0; takenStarts.length = 0; refuseStarts.length = 0; noNewUid = false; for (const k of Object.keys(calStart)) delete calStart[k]; calNoMeet.clear(); for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; gmailFailStatus = 500; gmailLateReply = false; publishDown = false; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; };
 
 test('8.1: a booking sends the first email at once; the same webhook twice sends one; a wrong secret sends none', async () => {
   reset();
@@ -285,6 +286,144 @@ test('moved: a moved call that was then cancelled sends nothing', async () => {
   calStatus['bk-q2'] = 'cancelled';
   await atTime('2026-11-26T02:30:00.000Z', () => runQueue());
   assert.strictEqual(movedEmails().length, 0);
+});
+
+// ---------- Moved-call review fixes (21 Nov) ----------
+const toAsha = () => sent.filter(e => e.to === 'asha@example.com');
+const movedBodyWith = (uid, fromUid, startIso, edit) => { const b = JSON.parse(movedBody(uid, fromUid, startIso)); edit(b.payload); return JSON.stringify(b); };
+const lwebhookMod = require(path.join(tmp, 'lib', 'webhook.js'));
+
+test('moved fix 1: Gmail sends the moved email but answers too late: never sent again, one "may not have gone" alert', async () => {
+  reset();
+  calStart['bk-s2'] = NEW_START;
+  gmailLateReply = true;
+  await atTime('2026-11-25T12:00:00.000Z', () => sendWebhook(movedBody('bk-s2', 'bk-s1', NEW_START))); // 5:30 pm IST: goes now
+  await atTime('2026-11-25T12:05:00.000Z', () => runQueue()); // the retries and the 10-minute check
+  assert.strictEqual(movedEmails().length, 1, 'only once');
+  assert.deepStrictEqual(alertsSent.map(x => x.subject), ['Moved-call email may not have gone']);
+  assert.match(alertsSent[0].text, /^Moved-call email may not have gone: Asha Rao, Sat 28 Nov at 11:30 am \(the new time\)\. .*Check Sent in Gmail; if it isn't there, send it by hand\.$/);
+});
+
+test('moved fix 1: a Gmail 503 is never resent (one "may not have gone" alert); a clear 4xx refusal is retried and sent once', async () => {
+  reset();
+  calStart['bk-s4'] = NEW_START;
+  gmailFailures = 1; gmailFailStatus = 503;
+  await atTime('2026-11-25T12:00:00.000Z', () => sendWebhook(movedBody('bk-s4', 'bk-s3', NEW_START)));
+  await atTime('2026-11-25T12:05:00.000Z', () => runQueue());
+  assert.strictEqual(movedEmails().length, 0);
+  assert.deepStrictEqual(alertsSent.map(x => x.subject), ['Moved-call email may not have gone']);
+
+  reset();
+  calStart['bk-s6'] = NEW_START;
+  gmailFailures = 1; gmailFailStatus = 429;
+  await atTime('2026-11-25T12:00:00.000Z', () => sendWebhook(movedBody('bk-s6', 'bk-s5', NEW_START)));
+  await atTime('2026-11-25T12:05:00.000Z', () => runQueue());
+  assert.strictEqual(movedEmails().length, 1, 'sent on the retry, once');
+  assert.strictEqual(alertsSent.length, 0);
+});
+
+test('moved fix 2: a call moved to before the email\'s planned time gets its email right away (by day and at night)', async () => {
+  reset();
+  const EARLY = '2026-11-25T08:00:00.000Z'; // 1:30 pm IST, before the second email's 3 pm
+  calStart['bk-e2'] = EARLY;
+  await atTime('2026-11-25T04:30:00.000Z', () => sendWebhook(webhookBody({ uid: 'bk-e1', startTime: '2026-11-27T06:00:00.000Z' })));
+  await atTime('2026-11-25T06:00:00.000Z', () => sendWebhook(movedBody('bk-e2', 'bk-e1', EARLY)));
+  assert.strictEqual(movedEmails().length, 1, 'sent at once');
+  assert.strictEqual(movedEmails()[0].subject, 'Your call is moved to Wed 25 Nov at 1:30 pm IST');
+  await atTime('2026-11-25T09:30:00.000Z', () => runQueue());
+  assert.strictEqual(toAsha().length, 2, 'the booking email and the moved email, no second email');
+
+  reset();
+  const DAWN = '2026-11-26T01:30:00.000Z'; // 7 am IST, before the 8 am hold
+  calStart['bk-e4'] = DAWN;
+  await atTime('2026-11-25T17:00:00.000Z', () => sendWebhook(movedBody('bk-e4', 'bk-e3', DAWN))); // 10:30 pm IST
+  assert.strictEqual(movedEmails().length, 1, 'not held to 8 am: the call is at 7 am');
+});
+
+test('moved fix 2: a waiting moved email whose call already started is not sent, and Shubhang is told', async () => {
+  reset();
+  calStart['bk-t2'] = NEW_START;
+  await atTime('2026-11-25T17:00:00.000Z', () => sendWebhook(movedBody('bk-t2', 'bk-t1', NEW_START))); // waits for 8 am
+  await atTime('2026-11-28T07:00:00.000Z', () => runQueue()); // the queue only ran after the call
+  assert.strictEqual(movedEmails().length, 0);
+  assert.deepStrictEqual(alertsSent.map(x => x.subject), ['Moved-call email not sent']);
+  assert.match(alertsSent[0].text, /The call came before the email's planned time, so it was not sent\./);
+});
+
+test('moved fix 3: the booking email still retrying when the call is moved stops; the moved email is the one the lead gets', async () => {
+  reset();
+  calStart['bk-f2'] = NEW_START;
+  gmailFailures = 1; // the booking email's first try fails (a retry is queued)
+  await atTime('2026-11-25T04:30:00.000Z', () => sendWebhook(webhookBody({ uid: 'bk-f1', startTime: '2026-11-27T06:00:00.000Z' })));
+  await atTime('2026-11-25T04:31:00.000Z', () => sendWebhook(movedBody('bk-f2', 'bk-f1', NEW_START)));
+  await atTime('2026-11-25T04:32:00.000Z', () => runQueue());
+  assert.deepStrictEqual(toAsha().map(e => e.subject), ['Your call is moved to Sat 28 Nov at 11:30 am IST']);
+  assert.strictEqual(alertsSent.length, 0);
+});
+
+test('moved fix 3: a booking email retry checks Cal.com: cancelled or at another time, it stops; Cal.com down, it still goes', async () => {
+  for (const scenario of ['cancelled', 'time-changed', 'cal-down']) {
+    reset();
+    gmailFailures = 1;
+    await sendWebhook(webhookBody({ uid: 'bk-g-' + scenario }));
+    if (scenario === 'cancelled') calStatus['bk-g-cancelled'] = 'cancelled';
+    if (scenario === 'time-changed') calStart['bk-g-time-changed'] = '2026-11-12T10:35:00.000Z';
+    const realFetchMock = global.fetch;
+    if (scenario === 'cal-down') global.fetch = async (url, opts) => (/api\.cal\.com\/v2\/bookings\/bk-g/.test(String(url)) ? json({ error: 'down' }, 500) : realFetchMock(url, opts));
+    try { await runQueue(() => toAsha().length > 0); } finally { global.fetch = realFetchMock; } // Cal.com is down only for the retry
+    const firsts = toAsha().filter(e => /is scheduled for/.test(e.subject));
+    assert.strictEqual(firsts.length, scenario === 'cal-down' ? 1 : 0, scenario);
+    assert.strictEqual(alertsSent.length, 0, scenario + ': no alert');
+  }
+});
+
+test('moved fix 4: a bad time zone falls back to India time', async () => {
+  reset();
+  calStart['bk-z2'] = NEW_START;
+  await atTime('2026-11-25T06:00:00.000Z', () => sendWebhook(movedBodyWith('bk-z2', 'bk-z1', NEW_START, p => { p.attendees[0].timeZone = 'Not/AZone'; })));
+  assert.deepStrictEqual(movedEmails().map(e => e.subject), ['Your call is moved to Sat 28 Nov at 11:30 am IST']);
+  assert.strictEqual((await store.get('booking:bk-z2')).tz, 'Asia/Kolkata');
+  reset();
+  await sendWebhook(webhookBody({ uid: 'bk-z3', attendees: [{ name: 'Asha Rao', email: 'asha@example.com', timeZone: 'Not/AZone' }] }));
+  assert.strictEqual((await store.get('booking:bk-z3')).tz, 'Asia/Kolkata', 'the booking webhook too');
+  assert.match(toAsha()[0].subject, /4:05 pm IST$/);
+});
+
+test('moved fix 4: the move can\'t be recorded: Shubhang is alerted with the new time', async () => {
+  reset();
+  const realSet = store.set;
+  store.set = async (key, obj, opts) => { if (key === 'booking:bk-h2') throw new Error('store down'); return realSet(key, obj, opts); };
+  try {
+    const r = await atTime('2026-11-25T06:00:00.000Z', () => sendWebhook(movedBody('bk-h2', 'bk-h1', NEW_START)));
+    assert.strictEqual(r.status, 200);
+  } finally { store.set = realSet; }
+  assert.strictEqual(movedEmails().length, 0);
+  assert.deepStrictEqual(alertsSent.map(x => x.subject), ['Moved-call email not queued']);
+  assert.match(alertsSent[0].text, /^Moved-call email not queued: Asha Rao, now Sat 28 Nov at 11:30 am IST\. The move couldn't be recorded \(store down\), so no email with the new time will go\. Send it by hand\.$/);
+});
+
+test('moved fix 4: Cal.com sends the move again and the first try never queued the email: queued now, still sent once', async () => {
+  reset();
+  calStart['bk-r2'] = NEW_START;
+  const raw = movedBody('bk-r2', 'bk-r1', NEW_START);
+  const first = await atTime('2026-11-25T06:00:00.000Z', () => lwebhookMod.accept(JSON.parse(raw))); // recorded, then the function stopped
+  assert.strictEqual(first.result, 'accepted:moved');
+  assert.strictEqual(movedEmails().length, 0);
+  await atTime('2026-11-25T06:10:00.000Z', () => sendWebhook(raw));
+  assert.strictEqual(movedEmails().length, 1, 'queued (and sent) on the repeat');
+  await atTime('2026-11-25T06:20:00.000Z', () => sendWebhook(raw));
+  await atTime('2026-11-25T06:30:00.000Z', () => runQueue());
+  assert.strictEqual(movedEmails().length, 1, 'never twice');
+});
+
+test('moved fix 5: no Meet link on the moved booking: the email says it\'s in the invite, and Shubhang is alerted', async () => {
+  reset();
+  calStart['bk-k2'] = NEW_START; calNoMeet.add('bk-k2');
+  await atTime('2026-11-25T06:00:00.000Z', () => sendWebhook(movedBodyWith('bk-k2', 'bk-k1', NEW_START, p => { delete p.videoCallData; })));
+  assert.strictEqual(movedEmails().length, 1);
+  assert.match(movedEmails()[0].text, /The Google Meet link is in your calendar invite\./);
+  await new Promise(r => setTimeout(r, 50)); // the alert is sent alongside, not waited for
+  assert.deepStrictEqual(alertsSent.map(x => x.subject), ['Meet link missing: Asha Rao']);
 });
 
 test('8.2: the second email goes under the first, in the same thread, with Re:', async () => {
