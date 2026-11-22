@@ -41,6 +41,7 @@ const rescheduleCalls = []; const takenStarts = []; const refuseStarts = []; let
 const calStart = {};       // uid -> start time, when it differs from the webhook's
 const calByEmail = {};     // email -> [{createdAt,start,status}]
 let gmailFailures = 0;
+let gmailFailStatus = 500; // the status of a failing Gmail answer (a 4xx is a clear refusal, a 5xx may have sent it)
 let gmailLateReply = false;
 let n = 0;
 const json = (o, status) => new Response(JSON.stringify(o), { status: status || 200, headers: { 'content-type': 'application/json' } });
@@ -50,7 +51,7 @@ global.fetch = async (url, opts) => {
   if (url.startsWith('http://127.0.0.1')) return realFetch(url, opts);
   if (url.startsWith('https://oauth2.googleapis.com/token')) return json({ access_token: 'tok', expires_in: 3600 });
   if (url.endsWith('/messages/send')) {
-    if (gmailFailures > 0) { gmailFailures--; return json({ error: { message: 'boom' } }, 500); }
+    if (gmailFailures > 0) { gmailFailures--; return json({ error: { message: 'boom' } }, gmailFailStatus); }
     const body = JSON.parse(opts.body);
     const mime = Buffer.from(body.raw, 'base64url').toString('utf8');
     const header = (name) => {
@@ -176,7 +177,7 @@ async function runQueue(until) {
     results.push((await r.json()).result);
   }
 }
-const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calEventType)) delete calEventType[k]; rescheduleCalls.length = 0; takenStarts.length = 0; refuseStarts.length = 0; noNewUid = false; for (const k of Object.keys(calStart)) delete calStart[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; gmailLateReply = false; publishDown = false; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; };
+const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calEventType)) delete calEventType[k]; rescheduleCalls.length = 0; takenStarts.length = 0; refuseStarts.length = 0; noNewUid = false; for (const k of Object.keys(calStart)) delete calStart[k]; for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; gmailFailStatus = 500; gmailLateReply = false; publishDown = false; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; };
 
 test('8.1: a booking sends the first email at once; the same webhook twice sends one; a wrong secret sends none', async () => {
   reset();
@@ -593,7 +594,7 @@ test('8.3: nudge 1 went but saving "sent" failed: never sent again, and Shubhang
   const b2 = lead({ email: 'retry@example.com', name: 'Ravi Nair' });
   await post('/api/lead', b2);
   await post('/api/lead-signal', { kind: 'didnt_book', lead_event_id: b2.lead_event_id });
-  gmailFailures = 1;
+  gmailFailures = 1; gmailFailStatus = 429;
   await runQueue();
   gmailFailures = 0;
   assert.strictEqual(sent.filter(e => e.to === 'retry@example.com' && /^One step left/.test(e.subject)).length, 1, 'sent on the retry, once');
@@ -633,7 +634,7 @@ test('8.3: Gmail clearly refused and clearing the claim also failed: reported as
   const b = lead({ email: 'stuck@example.com', name: 'Sara Das' });
   await post('/api/lead', b);
   await post('/api/lead-signal', { kind: 'didnt_book', lead_event_id: b.lead_event_id });
-  gmailFailures = 1;
+  gmailFailures = 1; gmailFailStatus = 400;
   const realUpdate = store.update;
   store.update = async (key, patch) => { if (patch && patch.nudge1Sending === null) throw new Error('store down'); return realUpdate(key, patch); };
   try { await runQueue(); } finally { store.update = realUpdate; gmailFailures = 0; }
@@ -642,12 +643,85 @@ test('8.3: Gmail clearly refused and clearing the claim also failed: reported as
   assert.strictEqual(alertsSent[0].text, 'Nudge email not sent: Sara Das, Skyline Homes. WhatsApp them two times instead.');
 });
 
+test('8.3: Gmail answers 500 or 503 (a server error): treated like a timeout, never resent, one "may not have gone" alert', async () => {
+  for (const status of [500, 503]) {
+    reset();
+    const email = `err${status}@example.com`;
+    const b = lead({ email, name: 'Esha Pai' });
+    await post('/api/lead', b);
+    await post('/api/lead-signal', { kind: 'didnt_book', lead_event_id: b.lead_event_id });
+    gmailFailures = 1; gmailFailStatus = status;
+    await runQueue(); // the nudge, its retries and the 10-minute check
+    gmailFailures = 0;
+    assert.strictEqual(sent.filter(e => e.to === email).length, 0, status + ': not sent again after the server error');
+    assert.deepStrictEqual(alertsSent.map(x => x.subject), ['Nudge email may not have gone'], status + ': one alert, the right one');
+  }
+});
+
+test('8.3: nudge 1 went, saving "sent" failed and the task state could not be saved either: one alert only, never a wrong "not sent"', async () => {
+  reset();
+  const b = lead({ email: 'onealert@example.com', name: 'Om Joshi' });
+  await post('/api/lead', b);
+  await post('/api/lead-signal', { kind: 'didnt_book', lead_event_id: b.lead_event_id });
+  const realUpdate = store.update;
+  // during nudge 1's run the store refuses both the "sent" save and the task's "failed" state, so the 10-minute
+  // check (run later, once the store is back) still finds "claimed"
+  store.update = async (key, patch) => {
+    if (patch && ((patch.nudge1 && patch.nudge1.sentAt) || patch.status === 'failed')) throw new Error('store down');
+    return realUpdate(key, patch);
+  };
+  try {
+    const job = published.find(p => !p.ran); job.ran = true;
+    const raw = JSON.stringify({ jobId: job.jobId });
+    await post('/api/jobs/run', raw, { 'upstash-signature': qstashSig(raw) });
+  } finally { store.update = realUpdate; }
+  assert.strictEqual((await store.get(`task:nudge1:${(await store.get('job:' + published[0].jobId)).payload.key}`)).status, 'claimed', 'the check will find "claimed"');
+  await runQueue(); // the 10-minute check
+  assert.strictEqual(sent.filter(e => e.to === 'onealert@example.com').length, 1, 'nudge 1 went once');
+  assert.deepStrictEqual(alertsSent.map(x => x.subject), ['Nudge 2 not queued'], 'only the right alert; the 10-minute check adds nothing');
+});
+
+test('8.3: the 10-minute check finds a nudge Gmail was asked to send: "may not have gone", never "not sent"', async () => {
+  reset();
+  const b = lead({ email: 'checkclaim@example.com', name: 'Kiran Bose' });
+  await post('/api/lead', b);
+  await post('/api/lead-signal', { kind: 'didnt_book', lead_event_id: b.lead_event_id });
+  // the nudge's task is claimed and Gmail was asked to send it, then the function stopped (no answer, no retry)
+  const job = published.find(p => !p.ran);
+  const jobRec = await store.get('job:' + job.jobId);
+  const nudgeCode = jobRec.payload.key;
+  await store.set(`task:nudge1:${nudgeCode}`, { status: 'claimed', claimedAt: Date.now() });
+  await store.update('nudge:' + nudgeCode, { nudge1Sending: Date.now() });
+  assert.strictEqual(await tasks.runCheck('nudge1', nudgeCode), 'alerted');
+  assert.deepStrictEqual(alertsSent.map(x => x.subject), ['Nudge email may not have gone']);
+});
+
+test('8.3: nudge 1 went but nudge 2 could never be queued: after the last try, "Nudge 2 not queued", never "Nudge email not sent"', async () => {
+  reset();
+  const b = lead({ email: 'noqueue2@example.com', name: 'Neel Rao' });
+  await post('/api/lead', b);
+  await post('/api/lead-signal', { kind: 'didnt_book', lead_event_id: b.lead_event_id });
+  const job = published.find(p => !p.ran); job.ran = true;
+  const nudgeCode = (await store.get('job:' + job.jobId)).payload.key;
+  publishDown = true; // the queue is down for nudge 1's run and every retry
+  try {
+    const raw = JSON.stringify({ jobId: job.jobId });
+    await post('/api/jobs/run', raw, { 'upstash-signature': qstashSig(raw) });
+    assert.strictEqual(await tasks.runTask('nudge1', nudgeCode, 2), 'retry');
+    assert.strictEqual(await tasks.runTask('nudge1', nudgeCode, 3), 'failed');
+  } finally { publishDown = false; }
+  assert.strictEqual(sent.filter(e => e.to === 'noqueue2@example.com').length, 1, 'nudge 1 went once');
+  assert.deepStrictEqual(alertsSent.map(x => x.subject), ['Nudge 2 not queued']);
+  assert.strictEqual(alertsSent[0].text, 'Nudge 2 not queued: Neel Rao, Skyline Homes. Nudge 1 went, but nudge 2 could not be queued. If they haven’t booked or replied by tomorrow, WhatsApp them.');
+  assert.strictEqual(await tasks.runCheck('nudge1', nudgeCode), 'ok');
+});
+
 test('8.3: a failing nudge is tried 3 times, then Shubhang is alerted with the brief\'s words', async () => {
   reset();
   const b = lead({ email: 'fail@example.com', name: 'Fay Roy' });
   await post('/api/lead', b);
   await post('/api/lead-signal', { kind: 'didnt_book', lead_event_id: b.lead_event_id });
-  gmailFailures = 99;
+  gmailFailures = 99; gmailFailStatus = 403;
   await runQueue();
   gmailFailures = 0;
   assert.strictEqual(sent.filter(e => e.to === 'fail@example.com').length, 0);
