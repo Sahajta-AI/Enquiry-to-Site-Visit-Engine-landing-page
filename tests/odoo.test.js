@@ -1524,3 +1524,61 @@ test('V2 Odoo 12: the 8 am safety net gives "Next step: plan what\'s next for th
   assert.strictEqual(off.result, 'off');
   assert.strictEqual(odooCalls.length, 0, 'not one Odoo call with the switch off');
 });
+
+test('Go-live catch-up: the preview only reads; hand-set leads, other services, old and Won leads are never written; only the named leads get only what they miss, once', async () => {
+  v2on();
+  const catchup = require(path.join(tmp, 'lib', 'catchup.js'));
+  const recent = daysAgo(1);
+  const callAt = new Date(Date.now() + 3 * 86400000);
+  const mk = (id, extra) => leads.push(Object.assign({ id, active: true, stage_id: 3, create_date: recent, email_from: `c${id}@example.com`, [SVC]: [] }, extra));
+  mk(200, { name: '[TEST] Acme (Asha)', partner_name: 'Acme', contact_name: 'Asha', phone: '+919876543210' }); // website lead, nothing set up, a call booked
+  calByEmail['c200@example.com'] = [{ uid: 'bk-c200', status: 'accepted', start: callAt.toISOString() }];
+  mk(201, { name: '[TEST] Hand (Set)', partner_name: 'Hand', contact_name: 'Set' }); // on the hand-set list
+  mk(202, { name: '[TEST] Web (Dev)', [SVC]: [3] }); // another service
+  mk(203, { name: '[TEST] Old (Lead)', partner_name: 'Old', contact_name: 'Lead', create_date: '2026-10-01 10:00:00' }); // before the website
+  mk(204, { name: '[TEST] Done – Warm-Chain System', [SVC]: [WC], partner_id: 9, expected_revenue: 99000, recurring_revenue: 99000 });
+  acts.push({ id: ++seq, res_model: 'crm.lead', res_id: 204, summary: 'SMS/Call: call-day reminder', date_deadline: isoDay(2), done: false });
+  mk(205, { name: '[TEST] Won (Lead)', partner_name: 'Won', contact_name: 'Lead', stage_id: 6 });
+  mk(206, { name: '[TEST] My own title', partner_name: 'Own', contact_name: 'Title', stage_id: 1 }); // not booked, title typed by hand
+  const before = JSON.stringify(leads.filter(l => l.id !== 200 && l.id !== 206));
+  const opts = { tests: true, handSet: [201] };
+
+  const from = odooCalls.length;
+  const p = await catchup.preview(opts);
+  assert.deepStrictEqual([...new Set(odooCalls.slice(from).map(c => c.method))], ['search_read'], 'the preview only reads');
+  assert.strictEqual(calCancels.length, 0);
+  assert.deepStrictEqual(p.handSet.map(x => x.id), [201]);
+  assert.deepStrictEqual(p.toDo.map(x => x.id), [200, 206]);
+  assert.deepStrictEqual(p.nothingToDo.map(x => x.id), [204]);
+  assert.ok(p.nothingToDo[0].warnings.some(w => w.includes('SMS/Call: call-day reminder')), 'a hand-made reminder title is flagged');
+  assert.strictEqual(p.otherService, 1);
+  assert.strictEqual(p.beforeSite, 1);
+  assert.deepStrictEqual(p.toDo[0].steps.map(s => s.kind), ['tag', 'title', 'contact', 'revenue', 'reminders']);
+  assert.deepStrictEqual(p.toDo[1].steps.map(s => s.kind), ['tag', 'contact'], 'not booked: no revenue, no reminders; a hand-typed title stays');
+
+  await assert.rejects(catchup.apply([201], opts), /never written/);
+  const log = await catchup.apply([200, 202, 204, 205], opts);
+  assert.ok(log[0].startsWith('200: done'));
+  assert.ok(log.slice(1).every(x => x.includes('skipped')));
+  const l = leads.find(x => x.id === 200);
+  assert.deepStrictEqual(l[SVC], [WC]);
+  assert.strictEqual(l.name, '[TEST] Acme – Warm-Chain System');
+  assert.strictEqual(l.expected_revenue, 99000);
+  assert.strictEqual(l.recurring_revenue, 99000);
+  assert.strictEqual(l.recurring_plan, 1);
+  const person = partners.find(x => x.id === l.partner_id);
+  assert.strictEqual(person.email, 'c200@example.com');
+  assert.ok(person.name.startsWith('[TEST] '));
+  assert.deepStrictEqual(acts.filter(x => x.res_id === 200).map(x => x.summary).sort(), [ol.R.after, ol.R.callDay, ol.R.evening].sort());
+  assert.strictEqual(JSON.stringify(leads.filter(x => x.id !== 200 && x.id !== 206)), before, 'nothing else written');
+  assert.ok(!leads.find(x => x.id === 206)[SVC].length, 'a lead not named is not written');
+  assert.ok(!odooCalls.some(c => c.method === 'unlink' || c.method === 'action_feedback'), 'nothing removed or marked Done');
+  assert.strictEqual(notes.length, 0);
+
+  const again = await catchup.preview(opts);
+  assert.deepStrictEqual(again.toDo.map(x => x.id), [206], 'lead 200 has nothing left to do');
+  const partnersBefore = partners.length;
+  assert.ok((await catchup.apply([200], opts))[0].includes('nothing to do'));
+  assert.strictEqual(acts.filter(x => x.res_id === 200).length, 3, 'no copy');
+  assert.strictEqual(partners.length, partnersBefore, 'no second Contact');
+});
