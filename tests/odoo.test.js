@@ -1537,7 +1537,7 @@ test('Go-live catch-up: the preview only reads; hand-set leads, other services, 
   mk(202, { name: '[TEST] Web (Dev)', [SVC]: [3] }); // another service
   mk(203, { name: '[TEST] Old (Lead)', partner_name: 'Old', contact_name: 'Lead', create_date: '2026-10-01 10:00:00' }); // before the website
   mk(204, { name: '[TEST] Done – Warm-Chain System', [SVC]: [WC], partner_id: 9, expected_revenue: 99000, recurring_revenue: 99000 });
-  acts.push({ id: ++seq, res_model: 'crm.lead', res_id: 204, summary: 'SMS/Call: call-day reminder', date_deadline: isoDay(2), done: false });
+  acts.push({ id: ++seq, res_model: 'crm.lead', res_id: 204, summary: 'Call: confirm the time', date_deadline: isoDay(2), done: false });
   mk(205, { name: '[TEST] Won (Lead)', partner_name: 'Won', contact_name: 'Lead', stage_id: 6 });
   mk(206, { name: '[TEST] My own title', partner_name: 'Own', contact_name: 'Title', stage_id: 1 }); // not booked, title typed by hand
   const before = JSON.stringify(leads.filter(l => l.id !== 200 && l.id !== 206));
@@ -1550,7 +1550,7 @@ test('Go-live catch-up: the preview only reads; hand-set leads, other services, 
   assert.deepStrictEqual(p.handSet.map(x => x.id), [201]);
   assert.deepStrictEqual(p.toDo.map(x => x.id), [200, 206]);
   assert.deepStrictEqual(p.nothingToDo.map(x => x.id), [204]);
-  assert.ok(p.nothingToDo[0].warnings.some(w => w.includes('SMS/Call: call-day reminder')), 'a hand-made reminder title is flagged');
+  assert.ok(p.nothingToDo[0].warnings.some(w => w.includes('Call: confirm the time')), 'a hand-made reminder title is flagged');
   assert.strictEqual(p.otherService, 1);
   assert.strictEqual(p.beforeSite, 1);
   assert.deepStrictEqual(p.toDo[0].steps.map(s => s.kind), ['tag', 'title', 'contact', 'revenue', 'reminders']);
@@ -1581,4 +1581,33 @@ test('Go-live catch-up: the preview only reads; hand-set leads, other services, 
   assert.ok((await catchup.apply([200], opts))[0].includes('nothing to do'));
   assert.strictEqual(acts.filter(x => x.res_id === 200).length, 3, 'no copy');
   assert.strictEqual(partners.length, partnersBefore, 'no second Contact');
+});
+
+test('V2 SMS/Call (Shubhang, 23 Nov): "SMS/Call: …" reminders count as our "WhatsApp: …" ones: moved, never doubled, removed on cancel and Lost; new ones keep "SMS/Call:"; any other title untouched', async () => {
+  v2on();
+  const b = leadBody({ whatsapp_number: '9870707070' });
+  await sendLead(b);
+  const first = inDays(3, 10); const later = inDays(5, 6);
+  await bookV2('bk-sms1', b.email, first.toISOString());
+  await settle();
+  const l = leads[0];
+  // Set up by hand for a lead not on WhatsApp
+  for (const x of openActs(l.id)) x.summary = x.summary.replace(/^WhatsApp: /, 'SMS/Call: ');
+  acts.push({ id: ++seq, res_model: 'crm.lead', res_id: l.id, summary: 'SMS/Call: check the address', date_deadline: isoDay(1), done: false });
+  const mine = ['SMS/Call: call-day reminder', 'SMS/Call: personal message (evening before the call)'];
+
+  await hook('BOOKING_RESCHEDULED', 'bk-sms2', b.email, later.toISOString(), { rescheduleUid: 'bk-sms1', rescheduleStartTime: first.toISOString(), metadata: adMeta('bk-sms2'), responses: { notes: { value: BOOK_NOTES } } });
+  await settle();
+  assert.deepStrictEqual(titlesOf(l.id), ['After the call: update the stage', ...mine, 'SMS/Call: check the address'].sort(), 'moved, no WhatsApp copy next to them');
+  assert.strictEqual(openActs(l.id).find(x => x.summary === 'SMS/Call: call-day reminder').date_deadline, dayOf(later), 'at the new date');
+
+  await hook('BOOKING_CANCELLED', 'bk-sms2', b.email, later.toISOString(), { cancelledBy: b.email, organizer: { email: 'shubhang@sahajta.com' } });
+  await settle();
+  assert.deepStrictEqual(titlesOf(l.id), ['SMS/Call: check the address', 'SMS/Call: get the call rebooked'], 'call reminders removed; the rebook reminder keeps "SMS/Call:"');
+  assert.ok(!acts.some(x => x.done), 'none marked Done');
+
+  l.active = false; l.write_date = new Date().toISOString().slice(0, 19).replace('T', ' ');
+  await run();
+  assert.deepStrictEqual(titlesOf(l.id), ['SMS/Call: check the address'], 'Lost: ours removed, any other title stays');
+  await assert.rejects(odoo.removeOurReminders(l.id, ['SMS/Call: check the address']), /never removed/);
 });
