@@ -1332,6 +1332,30 @@ test('V2 Odoo 7: the 2-hour check: queued with the form; no booking -> the "didn
   assert.ok(!offJobs.some(j => j && j.kind === 'didnt-book-check'));
 });
 
+test('V2 Odoo 13 (Shubhang, 24 Nov): a second visit the same day without booking still gets its "filled again" note, once, and no new nudges', async () => {
+  v2on();
+  process.env.NUDGES_ENABLED = '1';
+  const email = 'sameday' + (++n) + '@example.com';
+  const b1 = leadBody({ email, whatsapp_number: '9811112222' });
+  await sendLead(b1);
+  assert.strictEqual(await signal('didnt_book', b1.lead_event_id), 'noted+nudges');
+  await settle();
+  const id = leads.find(l => l.email_from === email).id;
+  assert.strictEqual(notesStarting(id, 'Filled the form, didn&#39;t book').length, 1);
+
+  const b2 = leadBody({ email, whatsapp_number: '9811112222' });
+  await sendLead(b2);
+  assert.strictEqual(leads.filter(l => l.email_from === email).length, 1, 'same lead');
+  assert.strictEqual(await signal('didnt_book', b2.lead_event_id), 'noted-again');
+  await settle();
+  assert.strictEqual(notesStarting(id, 'Filled the form again, didn&#39;t book').length, 1);
+  assert.ok(!(await store.get('nudgelead:' + b2.lead_event_id)), 'no new nudges');
+  assert.strictEqual(await signal('didnt_book', b2.lead_event_id), 'duplicate', 'the same visit again: nothing more');
+  assert.strictEqual(await leadsMod.runDidntBookCheck(b2.lead_event_id), 'duplicate', 'its 2-hour check: nothing more');
+  await settle();
+  assert.strictEqual(notesStarting(id, 'Filled the form again, didn&#39;t book').length, 1);
+});
+
 test('V2 Odoo 13: fills the form again: no note now; didn\'t book -> "Filled the form again, didn\'t book" + follow-up today, no new nudges; call already booked -> a note and "Check why they filled the form again"', async () => {
   v2on();
   process.env.NUDGES_ENABLED = '1';
