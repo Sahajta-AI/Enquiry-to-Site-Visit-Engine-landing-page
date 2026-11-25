@@ -1266,6 +1266,34 @@ test('V2 Odoo 7: left without booking, nudges off: one "Filled the form, didn\'t
   assert.ok(!acts.some(x => x.done));
 });
 
+test('V2 (25 Nov, lead 142): a reply to the nudge removes our open "follow up (didn\'t book)" reminder (never Done); a hand-made reminder stays', async () => {
+  v2on();
+  process.env.NUDGES_ENABLED = '1';
+  const email = 'replyfu' + (++n) + '@example.com';
+  const b1 = leadBody({ email, whatsapp_number: '9822223333' });
+  await sendLead(b1);
+  assert.strictEqual(await signal('didnt_book', b1.lead_event_id), 'noted+nudges');
+  await settle();
+  const id = leads.find(l => l.email_from === email).id;
+  const b2 = leadBody({ email, whatsapp_number: '9822223333' });
+  await sendLead(b2);
+  assert.strictEqual(await signal('didnt_book', b2.lead_event_id), 'noted-again');
+  await settle();
+  const follow = () => openActs(id).filter(x => x.summary === 'WhatsApp: follow up (didn\'t book)');
+  assert.strictEqual(follow().length, 1, 'the same-day second visit left a follow-up');
+  acts.push({ id: ++seq, res_model: 'crm.lead', res_id: id, summary: 'WhatsApp: second follow-up (no reply)', date_deadline: isoDay(1), done: false });
+
+  const code = (await store.get('nudgelead:' + b1.lead_event_id)).code;
+  await store.update('nudge:' + code, { nudge1: { sentAt: Date.now(), gmailId: 'm80', threadId: 't80' }, nudge2: { sentAt: Date.now(), gmailId: 'm81' } });
+  threadsFake.t80 = [{ id: 'm80' }, { id: 'm81' }, { id: 'm82', from: 'Asha Rao <' + email + '>' }];
+  assert.strictEqual(await tasksMod.runNudgeCheck(code), 'replied');
+  await settle();
+  assert.strictEqual(follow().length, 0, 'our follow-up is removed');
+  assert.ok(!acts.some(x => x.done), 'never marked Done');
+  assert.ok(openActs(id).some(x => x.summary === 'WhatsApp: second follow-up (no reply)'), 'a hand-made reminder is never touched');
+  assert.strictEqual(notes.filter(x => x.id === id && x.body === 'Replied to the nudge email: no WhatsApp follow-up needed').length, 1);
+});
+
 test('V2 Odoo 7: with nudges: no reminder now; the day after nudge 2: no booking and no reply -> follow-up reminder; a reply -> a note, then "Reply to their email" if Shubhang hasn\'t answered', async () => {
   for (const scenario of ['no-reply', 'replied-unanswered', 'replied-answered', 'booked']) {
     v2on();
