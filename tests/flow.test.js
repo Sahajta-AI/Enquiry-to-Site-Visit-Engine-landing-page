@@ -109,6 +109,7 @@ global.fetch = async (url, opts) => {
   }
   if (url === 'https://api.cal.com/v2/bookings' && opts.method === 'POST') {
     if (calMode === 'refuse') return json({ error: 'slot taken' }, 400);
+    if (calMode === 'refuse-email') return json({ status: 'error', error: { code: 'BadRequestException', message: 'Attendee email domain cannot receive emails' } }, 400);
     const b = JSON.parse(opts.body);
     calBookingPosts.push(b);
     return json({ data: { uid: 'bk-resume-' + calBookingPosts.length, id: 9, videoCallUrl: 'https://meet.google.com/x' } });
@@ -126,6 +127,12 @@ global.fetch = async (url, opts) => {
 };
 
 const app = require(path.join(tmp, 'server.js'));
+// No network in tests: a fake DNS. Any domain takes mail, except *.nomail.test (doesn't exist) and slow.test (times out)
+const fakeDns = {
+  resolveMx: async (d) => { if (/nomail\.test$/.test(d)) throw Object.assign(new Error('nx'), { code: 'ENOTFOUND' }); if (d === 'slow.test') return new Promise(() => {}); return [{ exchange: 'mx.' + d, priority: 10 }]; },
+  resolve4: async (d) => { if (/nomail\.test$/.test(d)) throw Object.assign(new Error('nx'), { code: 'ENOTFOUND' }); return ['192.0.2.1']; }
+};
+require(path.join(tmp, 'lib', 'emailcheck.js'))._setResolver(fakeDns);
 const store = require(path.join(tmp, 'lib', 'store.js'));
 require(path.join(tmp, 'lib', 'leads.js'))._setRecordWaitMs(5);
 const tasks = require(path.join(tmp, 'lib', 'tasks.js'));
@@ -1072,6 +1079,65 @@ test('7.4 Cal.com refuses a booking: the normal error, one alert per person with
   const mail = sent.find(e => e.subject === 'A booking could not be made');
   assert.match(mail.text, /Name: Refused Person[\s\S]*Email: refused@example\.com[\s\S]*Time they picked:/);
   assert.strictEqual(metaCalls.length, 0, 'no Schedule for a failed booking');
+});
+
+test('26 Nov email check: a domain that takes no mail is refused, a typo of a common provider gets "Did you mean", anything unsure goes through', async () => {
+  const ec = require(path.join(tmp, 'lib', 'emailcheck.js'));
+  assert.strictEqual(ec.suggest('a@gmial.com'), 'a@gmail.com');
+  assert.strictEqual(ec.suggest('a@gamil.com'), 'a@gmail.com');
+  assert.strictEqual(ec.suggest('a@gmail.co'), 'a@gmail.com');
+  assert.strictEqual(ec.suggest('a@gmail.con'), 'a@gmail.com');
+  assert.strictEqual(ec.suggest('a@yahooo.com'), 'a@yahoo.com');
+  assert.strictEqual(ec.suggest('a@hotmial.com'), 'a@hotmail.com');
+  assert.strictEqual(ec.suggest('a@outlok.com'), 'a@outlook.com');
+  for (const ok of ['a@gmail.com', 'a@mail.com', 'a@gmx.com', 'a@sahajta.com', 'a@yahoo.co.in', 'a@me.com', 'a@company.in']) assert.strictEqual(ec.suggest(ok), '', ok);
+
+  const ask = async (email, headers) => { const r = await post('/api/check-email', { email }, headers); return { status: r.status, body: await r.json() }; };
+  assert.deepStrictEqual((await ask('jinal@handsintechmology.nomail.test')).body, { ok: false, reason: 'no-domain', suggestion: '' });
+  assert.deepStrictEqual((await ask('rohan@skyline.in')).body, { ok: true, reason: 'ok', suggestion: '' });
+  assert.deepStrictEqual((await ask('rohan@gmial.com')).body, { ok: true, reason: 'ok', suggestion: 'rohan@gmail.com' });
+  const t0 = Date.now();
+  assert.deepStrictEqual((await ask('rohan@slow.test')).body, { ok: true, reason: 'unsure', suggestion: '' }, 'slow DNS: never blocks');
+  assert.ok(Date.now() - t0 < 4000);
+  assert.deepStrictEqual((await ask('not an email')).body, { ok: true, reason: 'unsure', suggestion: '' });
+
+  // the resolver's other answers: exists with no mail servers but an address -> ok; a "null MX" -> none; any other error -> unsure
+  const fake = (mx, a) => ({ resolveMx: mx, resolve4: a });
+  ec._clearCache();
+  assert.strictEqual(await ec.domainStatus('x1.test', { resolver: fake(async () => { throw Object.assign(new Error(''), { code: 'ENODATA' }); }, async () => ['192.0.2.9']) }), 'ok');
+  assert.strictEqual(await ec.domainStatus('x2.test', { resolver: fake(async () => [{ exchange: '.', priority: 0 }], async () => ['192.0.2.9']) }), 'none');
+  assert.strictEqual(await ec.domainStatus('x3.test', { resolver: fake(async () => { throw Object.assign(new Error(''), { code: 'ESERVFAIL' }); }, async () => []) }), 'unsure');
+  assert.strictEqual(await ec.domainStatus('x4.test', { resolver: fake(async () => { throw Object.assign(new Error(''), { code: 'ENODATA' }); }, async () => { throw Object.assign(new Error(''), { code: 'ENODATA' }); }) }), 'none');
+});
+
+test('26 Nov a booking with an email whose domain takes no mail: asked to fix the email (time kept), Cal.com never called', async () => {
+  reset();
+  const r = await post('/api/submit-lead', bookingBody({ email: 'jinal.p@handsintechmology.nomail.test', name: 'Jinal P' }));
+  assert.strictEqual(r.status, 400);
+  const body = await r.json();
+  assert.strictEqual(body.code, 'email');
+  assert.match(body.error, /check it and try again\. Your time is kept\./);
+  assert.strictEqual(calBookingPosts.length, 0);
+});
+
+test('26 Nov Cal.com refuses because of the email: asked to fix it (time kept), the alert gives Cal.com\'s reason; another refusal keeps the normal error with its reason', async () => {
+  reset();
+  calMode = 'refuse-email';
+  const r = await post('/api/submit-lead', bookingBody({ email: 'bounce@skyline.in', name: 'Email Person' }));
+  assert.strictEqual(r.status, 400);
+  assert.strictEqual((await r.json()).code, 'email');
+  assert.ok(await waitFor(() => sent.some(e => e.subject === 'A booking could not be made' && /Email Person/.test(e.text))));
+  const mail = sent.find(e => /Email Person/.test(e.text));
+  assert.match(mail.text, /Cal\.com said: status 400: Attendee email domain cannot receive emails/);
+  assert.match(mail.text, /asked to fix their email and book again/);
+
+  reset();
+  calMode = 'refuse';
+  const r2 = await post('/api/submit-lead', bookingBody({ email: 'taken@skyline.in', name: 'Taken Person' }));
+  assert.strictEqual(r2.status, 502);
+  assert.strictEqual((await r2.json()).code, 'booking');
+  assert.ok(await waitFor(() => sent.some(e => /Taken Person/.test(e.text))));
+  assert.match(sent.find(e => /Taken Person/.test(e.text)).text, /Cal\.com said: status 400: slot taken[\s\S]*Please reach out to this person\./);
 });
 
 test('4 no Cal.com key: the booking fails with the normal error, never a fake "booked", and Shubhang gets the details', async () => {

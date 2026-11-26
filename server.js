@@ -19,6 +19,7 @@ const lbookingmeta = require('./lib/bookingmeta');
 const ltrackingtest = require('./lib/trackingtest');
 const lodooleads = require('./lib/odooleads');
 const lodoosignals = require('./lib/odoosignals');
+const lemailcheck = require('./lib/emailcheck');
 
 // Load environment variables from .env if present
 const envPath = path.join(__dirname, '.env');
@@ -506,6 +507,20 @@ function formatNotesPhone(raw) {
 // Backend and Tracking Brief: checks (7.1, 7.2), Schedule and QualifiedBooking from the server (5.3, 5.5),
 // the source data on the booking (6), the test flag (7.3) and the alerts (7.4). Reply first, then the rest (part 4).
 const BOOKING_ERROR = 'The booking could not be made. Please pick a time again.';
+// The email can't receive mail (our check, or Cal.com's): the page reopens the email field and keeps the picked time
+const EMAIL_ERROR = 'We couldn’t book with this email address. Please check it and try again. Your time is kept.';
+
+// The email check before the open times show (lib/emailcheck.js). It never blocks on its own failure: any error
+// answers ok, so the page goes on as before.
+app.post('/api/check-email', async (req, res) => {
+  if (!lleads.originAllowed(req)) return res.status(403).json({ ok: true, reason: 'unsure', suggestion: '' });
+  try {
+    return res.status(200).json(await lemailcheck.check(String((req.body && req.body.email) || '').slice(0, 200)));
+  } catch (err) {
+    console.warn('⚠️ [/api/check-email]:', logsafe.safe(err.message));
+    return res.status(200).json({ ok: true, reason: 'unsure', suggestion: '' });
+  }
+});
 
 app.post('/api/submit-lead', async (req, res) => {
   if (!lleads.originAllowed(req)) return res.status(403).json({ success: false, ok: false, code: 'origin' });
@@ -597,6 +612,17 @@ app.post('/api/submit-lead', async (req, res) => {
     return fail(503, 'booking');
   }
 
+  // The email's domain can't take mail: Cal.com would refuse it. Ask for the email again, keeping the time
+  // (the page checks first; this catches an old page or a skipped check). Only a definite "no domain" stops it.
+  if (!nudgeRec) {
+    const st = await lemailcheck.domainStatus(String(email).split('@').pop(), { timeoutMs: 1500 }).catch(() => 'unsure');
+    if (st === 'none') {
+      console.warn('⚠️ [Booking]: the email domain takes no mail, asked to fix it');
+      return fail(400, 'email', EMAIL_ERROR);
+    }
+  }
+
+  let calRefusal = '';
   {
     // A retry after a timeout, with the same email and the same time, must not book twice: reply with the booking that exists
     let existing = null;
@@ -644,7 +670,16 @@ app.post('/api/submit-lead', async (req, res) => {
           rescheduleUrl = bookingUid ? `https://cal.com/reschedule/${encodeURIComponent(bookingUid)}` : null;
           console.log(`✅ [Cal.com booking]: created, uid ${logsafe.maskCode(bookingUid)}`);
         } else {
-          console.warn('⚠️ [Cal.com booking refused]: status', calRes.status);
+          // Cal.com's own reason, for the log (masked) and the alert
+          const errText = await calRes.text().catch(() => '');
+          let reason = '';
+          try {
+            const j = JSON.parse(errText);
+            const e = j && j.error;
+            reason = (typeof e === 'string' ? e : e && (e.message || (e.details && JSON.stringify(e.details)))) || (j && j.message) || '';
+          } catch (e) { reason = errText; }
+          calRefusal = `status ${calRes.status}${reason ? ': ' + String(reason).replace(/\s+/g, ' ').slice(0, 300) : ''}`;
+          console.warn('⚠️ [Cal.com booking refused]:', logsafe.safe(calRefusal));
         }
       } catch (calErr) {
         timedOut = calErr.name === 'TimeoutError';
@@ -655,10 +690,14 @@ app.post('/api/submit-lead', async (req, res) => {
     // A booking that Cal.com refused or that timed out is a failed booking: tell the page, send nothing, create nothing.
     // One alert per person (per email and time picked), never merged.
     if (!calAccepted) {
+      // Refused because of the email (Cal.com's deliverability check): the page asks them to fix it, time kept
+      const emailRefused = !nudgeRec && /email/i.test(calRefusal) && !timedOut;
       lafter.after(() => lalerts.send('A booking could not be made',
-        `Cal.com ${timedOut ? 'did not answer in time' : 'refused'} a booking. Please reach out to this person.\n\n${detailsText}`,
+        `Cal.com ${timedOut ? 'did not answer in time' : 'refused'} a booking.${calRefusal ? ` Cal.com said: ${calRefusal}.` : ''}` +
+        (emailRefused ? ' They were asked to fix their email and book again; if they don’t, WhatsApp them.' : ' Please reach out to this person.') +
+        `\n\n${detailsText}`,
         `refused:${String(email).toLowerCase()}:${pickedTime}`, { backup: false }));
-      return fail(502, 'booking');
+      return emailRefused ? fail(400, 'email', EMAIL_ERROR) : fail(502, 'booking');
     }
   }
 

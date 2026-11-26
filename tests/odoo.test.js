@@ -223,6 +223,12 @@ global.fetch = async (url, opts) => {
 };
 
 const app = require(path.join(tmp, 'server.js'));
+// No network in tests: a fake DNS. Any domain takes mail, except *.nomail.test (doesn't exist) and slow.test (times out)
+const fakeDns = {
+  resolveMx: async (d) => { if (/nomail\.test$/.test(d)) throw Object.assign(new Error('nx'), { code: 'ENOTFOUND' }); if (d === 'slow.test') return new Promise(() => {}); return [{ exchange: 'mx.' + d, priority: 10 }]; },
+  resolve4: async (d) => { if (/nomail\.test$/.test(d)) throw Object.assign(new Error('nx'), { code: 'ENOTFOUND' }); return ['192.0.2.1']; }
+};
+require(path.join(tmp, 'lib', 'emailcheck.js'))._setResolver(fakeDns);
 const store = require(path.join(tmp, 'lib', 'store.js'));
 const ol = require(path.join(tmp, 'lib', 'odooleads.js'));
 const odoo = require(path.join(tmp, 'lib', 'odoo.js'));

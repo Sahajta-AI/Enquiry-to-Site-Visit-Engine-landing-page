@@ -391,7 +391,95 @@ document.addEventListener('DOMContentLoaded', () => {
     if (attempt < 2) setTimeout(() => sendLeadRecord(attempt + 1), 3000 + attempt * 2000);
   }
 
-  function submitContactForm() {
+  // The email check before the open times (Notion, 26 Nov: a wrong email must never block a booking).
+  // The server looks up the email's domain and spots common typos. It never blocks on its own failure: no reply,
+  // a slow reply (over 3.5 seconds) or any error goes on as before. Each address is checked once.
+  const errEmail = document.getElementById('err-email');
+  const errEmailDefault = errEmail ? errEmail.textContent : '';
+  const emailHint = document.getElementById('email-hint');
+  let emailCheckedFor = '';
+  let checkingEmail = false;
+
+  async function checkEmail(email) {
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = setTimeout(() => { if (ctrl) ctrl.abort(); }, 3500);
+    try {
+      const res = await fetch('/api/check-email', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }), signal: ctrl ? ctrl.signal : undefined
+      });
+      const data = await res.json();
+      return data && typeof data.ok === 'boolean' ? data : { ok: true, suggestion: '' };
+    } catch (err) {
+      return { ok: true, suggestion: '' };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function hideEmailHint() {
+    if (emailHint) { emailHint.hidden = true; emailHint.textContent = ''; }
+  }
+
+  function setEmailError(text) {
+    if (errEmail) errEmail.textContent = text || errEmailDefault;
+    fieldGroups.email.classList.toggle('has-error', !!text);
+  }
+
+  // "Did you mean …?" (one tap to use it), and for a domain that can't take mail, a clear error
+  function showEmailProblem(r, typed) {
+    hideEmailHint();
+    const domain = typed.split('@').pop();
+    if (!r.ok) setEmailError(`We couldn’t find “${domain}”. Please check your email address.`);
+    if (!emailHint || !r.suggestion) { focusField('email'); return; }
+    const line = document.createElement('p');
+    line.className = 'email-hint-line';
+    line.textContent = `Did you mean ${r.suggestion}?`;
+    const use = document.createElement('button');
+    use.type = 'button';
+    use.className = 'email-hint-btn';
+    use.textContent = 'Yes, use it';
+    use.addEventListener('click', () => {
+      emailInput.value = r.suggestion;
+      setEmailError('');
+      hideEmailHint();
+      submitContactForm();
+    });
+    emailHint.appendChild(line);
+    emailHint.appendChild(use);
+    if (r.ok) {
+      // The domain exists: they may really mean it
+      const keep = document.createElement('button');
+      keep.type = 'button';
+      keep.className = 'email-hint-btn is-quiet';
+      keep.textContent = 'No, keep mine';
+      keep.addEventListener('click', () => {
+        emailCheckedFor = typed;
+        hideEmailHint();
+        submitContactForm();
+      });
+      emailHint.appendChild(keep);
+    }
+    emailHint.hidden = false;
+    use.focus();
+  }
+
+  emailInput.addEventListener('input', () => {
+    hideEmailHint();
+    if (errEmail && errEmail.textContent !== errEmailDefault) errEmail.textContent = errEmailDefault;
+  });
+
+  // Cal.com refused the booking because of the email: back to the details, the email field open, the picked time kept
+  function askToFixEmail(text) {
+    isSubmittingLead = false;
+    emailCheckedFor = '';
+    goToStep(3);
+    setEmailError(text || errEmailDefault);
+    focusField('email');
+  }
+
+  async function submitContactForm() {
+    if (checkingEmail) return;
     const order = ['name', 'company', 'email', 'whatsapp'];
     let firstInvalid = null;
     order.forEach(key => {
@@ -401,6 +489,22 @@ document.addEventListener('DOMContentLoaded', () => {
       focusField(firstInvalid);
       return;
     }
+
+    const typedEmail = emailInput.value.trim();
+    if (emailCheckedFor !== typedEmail) {
+      const btn = document.getElementById('btn-step-3-submit');
+      checkingEmail = true;
+      if (btn) btn.disabled = true;
+      let r;
+      try { r = await checkEmail(typedEmail); } finally {
+        checkingEmail = false;
+        if (btn) btn.disabled = false;
+      }
+      if (emailInput.value.trim() !== typedEmail) return; // they changed it meanwhile: wait for the next press
+      if (!r.ok || r.suggestion) { showEmailProblem(r, typedEmail); return; }
+      emailCheckedFor = typedEmail;
+    }
+    hideEmailHint();
 
     wizardState.name = nameInput.value.trim();
     wizardState.company = companyInput.value.trim();
@@ -823,8 +927,10 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Error submitting lead:', err);
     }
 
-    // Open the thank-you page only when the booking went through. Anything else stays on the time screen.
+    // Open the thank-you page only when the booking went through. Anything else stays on the time screen,
+    // except an email Cal.com can't send to: back to the email field, with the picked time kept.
     if (!succeeded) {
+      if (!resume && result && result.code === 'email') { askToFixEmail(result.error); return; }
       showBookingFailure();
       return;
     }
@@ -891,6 +997,9 @@ document.addEventListener('DOMContentLoaded', () => {
     picker.loadError = false;
     Object.keys(monthSlotsCache).forEach(k => delete monthSlotsCache[k]);
     isSubmittingLead = false;
+    emailCheckedFor = '';
+    hideEmailHint();
+    if (errEmail) errEmail.textContent = errEmailDefault;
     goToStep(1);
     modalBackdrop.classList.remove('active');
     document.body.classList.remove('modal-open');
