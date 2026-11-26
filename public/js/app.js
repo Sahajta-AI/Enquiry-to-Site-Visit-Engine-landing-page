@@ -728,14 +728,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const cellDate = new Date(picker.year, picker.month, d);
         const cellDateStr = `${picker.year}-${pad(picker.month + 1)}-${pad(d)}`;
         const isPast = cellDate < todayZero;
-        const isSunday = cellDate.getDay() === 0; // Sundays stay off
-        const hasSlots = availableDates.includes(cellDateStr);
+        const hasSlots = availableDates.includes(cellDateStr); // Cal.com decides the open days (Sundays too)
 
         dayCells.push({
           dayNum: d,
           cellDateStr,
           isCurrentMonth: true,
-          isDisabled: isPast || isSunday || !hasSlots,
+          isDisabled: isPast || !hasSlots,
           isSelected: !!picker.selectedDate && dateKey(picker.selectedDate) === cellDateStr
         });
       }
