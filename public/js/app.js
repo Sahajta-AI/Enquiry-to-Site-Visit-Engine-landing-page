@@ -400,22 +400,39 @@ document.addEventListener('DOMContentLoaded', () => {
   let emailCheckedFor = '';
   let checkingEmail = false;
 
-  async function checkEmail(email) {
+  async function checkEmail(email, waitMs) {
     const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = setTimeout(() => { if (ctrl) ctrl.abort(); }, 3500);
+    const timer = setTimeout(() => { if (ctrl) ctrl.abort(); }, waitMs || 3500);
     try {
       const res = await fetch('/api/check-email', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }), signal: ctrl ? ctrl.signal : undefined
       });
       const data = await res.json();
-      return data && typeof data.ok === 'boolean' ? data : { ok: true, suggestion: '' };
+      return data && typeof data.ok === 'boolean' ? data : { ok: true, suggestion: '', noAnswer: true };
     } catch (err) {
-      return { ok: true, suggestion: '' };
+      return { ok: true, suggestion: '', noAnswer: true };
     } finally {
       clearTimeout(timer);
     }
   }
+
+  // The check starts as soon as they leave the email field, so the answer is usually ready when they press
+  // "See open times" (a first call after a quiet spell can be slow). One check per address; an earlier try that got
+  // no answer is tried once more on the press.
+  let emailCheck = { email: '', promise: null };
+  function startEmailCheck(email, retryNoAnswer) {
+    if (emailCheck.email === email && emailCheck.promise) {
+      if (!retryNoAnswer) return emailCheck.promise;
+      return emailCheck.promise.then(r => (r && r.noAnswer ? (emailCheck = { email, promise: checkEmail(email, 2000) }).promise : r));
+    }
+    emailCheck = { email, promise: checkEmail(email) };
+    return emailCheck.promise;
+  }
+  emailInput.addEventListener('blur', () => {
+    const v = emailInput.value.trim();
+    if (validators.email()) startEmailCheck(v, false);
+  });
 
   function hideEmailHint() {
     if (emailHint) { emailHint.hidden = true; emailHint.textContent = ''; }
@@ -496,7 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
       checkingEmail = true;
       if (btn) btn.disabled = true;
       let r;
-      try { r = await checkEmail(typedEmail); } finally {
+      try { r = await startEmailCheck(typedEmail, true); } finally {
         checkingEmail = false;
         if (btn) btn.disabled = false;
       }
@@ -998,6 +1015,7 @@ document.addEventListener('DOMContentLoaded', () => {
     Object.keys(monthSlotsCache).forEach(k => delete monthSlotsCache[k]);
     isSubmittingLead = false;
     emailCheckedFor = '';
+    emailCheck = { email: '', promise: null };
     hideEmailHint();
     if (errEmail) errEmail.textContent = errEmailDefault;
     goToStep(1);
