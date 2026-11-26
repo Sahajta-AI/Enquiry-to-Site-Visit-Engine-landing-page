@@ -216,7 +216,7 @@ global.fetch = async (url, opts) => {
   if (/\/threads\/t\d+/.test(url)) {
     const tid = url.match(/threads\/(t\d+)/)[1];
     const list = threadsFake[tid] || [{ id: 'm1' }];
-    return json({ messages: list.map(m => ({ id: m.id, payload: { headers: [{ name: 'From', value: m.from || 'Shubhang Sethi <shubhang@sahajta.com>' }] } })) });
+    return json({ messages: list.map(m => ({ id: m.id, payload: { headers: [{ name: 'From', value: m.from || 'Shubhang Sethi <shubhang@sahajta.com>' }].concat(m.subject ? [{ name: 'Subject', value: m.subject }] : [], m.ct ? [{ name: 'Content-Type', value: m.ct }] : []) } })) });
   }
   if (url === 'https://api.resend.com/emails') return json({ id: 'r1' });
   throw new Error('Unmocked fetch: ' + url);
@@ -1270,6 +1270,73 @@ test('V2 Odoo 7: left without booking, nudges off: one "Filled the form, didn\'t
   assert.strictEqual(notes.filter(x => x.id === l.id && x.body === 'Booked a call: no WhatsApp follow-up needed').length, 1);
   assert.ok(!openActs(l.id).some(x => x.summary === 'WhatsApp: follow up (didn\'t book)'), 'the follow-up reminder is removed');
   assert.ok(!acts.some(x => x.done));
+});
+
+const BOUNCE = { from: 'Mail Delivery Subsystem <mailer-daemon@googlemail.com>', subject: 'Delivery Status Notification (Failure)', ct: 'multipart/report; report-type=delivery-status; boundary="x"' };
+
+test('V2 bounce (26 Nov, Jinal): a bounced nudge is never a "reply": nudge 2 stops, one alert, a note and "WhatsApp: email bounced" today, no more emails to that address', async () => {
+  v2on();
+  process.env.NUDGES_ENABLED = '1';
+  const email = 'jinal' + (++n) + '@typo.example.com';
+  const b = leadBody({ email, whatsapp_number: '9844445555' });
+  await sendLead(b);
+  assert.strictEqual(await signal('didnt_book', b.lead_event_id), 'noted+nudges');
+  await settle();
+  const id = leads.find(l => l.email_from === email).id;
+  const code = (await store.get('nudgelead:' + b.lead_event_id)).code;
+  await store.update('nudge:' + code, { nudge1: { sentAt: Date.now(), gmailId: 'm90', threadId: 't90' }, nudge2Due: Date.now() });
+  threadsFake.t90 = [{ id: 'm90' }, Object.assign({ id: 'm91' }, BOUNCE)];
+  const before = sent.length;
+  assert.strictEqual(await tasksMod.HANDLERS.nudge2(code), 'stopped:bounced');
+  await settle();
+  assert.ok(!notes.some(x => x.id === id && /Replied to the nudge/.test(x.body)), 'never a "Replied" note');
+  const bn = notes.filter(x => x.id === id && /^Email bounced: our nudge email to /.test(x.body));
+  assert.strictEqual(bn.length, 1);
+  assert.match(bn[0].body, /couldn&#39;t be delivered\. No more emails go to this address\. WhatsApp them and ask for the right email\./);
+  const r = openActs(id).filter(x => x.summary === 'WhatsApp: email bounced, ask for the right email');
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].date_deadline, isoDay(0));
+  const alertsNow = sent.slice(before).filter(e => e.subject === 'An email to a lead bounced');
+  assert.strictEqual(alertsNow.length, 1);
+  const alertText = alertsNow[0].mime.split(/\r?\n\r?\n/).slice(1).map(p => { try { return Buffer.from(p.replace(/--.*$/s, '').replace(/\s+/g, ''), 'base64').toString('utf8'); } catch (e) { return ''; } }).join(' ');
+  assert.match(alertText, /WhatsApp them on 9844445555 and ask for the right email/);
+  assert.deepStrictEqual(sent.slice(before).map(e => e.subject), ['An email to a lead bounced'], 'nudge 2 never went');
+  // the 10-minute check and the next-day check find it again: nothing more (once per address); still not a reply
+  assert.strictEqual(await tasksMod.runCheck('nudge1', code).catch(() => 'x'), 'ok');
+  await store.set('task:nudge1:' + code, { status: 'sent' });
+  assert.strictEqual(await tasksMod.runCheck('nudge1', code), 'known');
+  assert.strictEqual(await tasksMod.runNudgeCheck(code), 'reminder');
+  await settle();
+  assert.strictEqual(notes.filter(x => x.id === id && /^Email bounced/.test(x.body)).length, 1);
+  assert.strictEqual(sent.filter(e => e.subject === 'An email to a lead bounced').length, 1);
+  assert.ok(!notes.some(x => x.id === id && /Replied to the nudge/.test(x.body)));
+});
+
+test('V2 bounce (26 Nov, Sindhuja): the 10-minute check after the booking email finds the bounce: alert + note + reminder; the second email then never goes', async () => {
+  v2on();
+  const email = 'sindhu' + (++n) + '@gmail.example.com';
+  const callAt = inDays(2, 10);
+  leads.push({ id: 120, name: '[TEST] Sindhu Co – Warm-Chain System', active: true, stage_id: 3, email_from: email, [SVC]: [WC], partner_id: 995 });
+  const uid = 'bk-bounce-' + n;
+  await store.set('booking:' + uid, { uid, name: 'Sindhuja', email, tz: 'Asia/Kolkata', startISO: callAt.toISOString(), first: { sentAt: Date.now(), gmailId: 'm95', threadId: 't95' } });
+  await store.set('task:first:' + uid, { status: 'sent' });
+  threadsFake.t95 = [{ id: 'm95' }, Object.assign({ id: 'm96' }, BOUNCE)];
+  const before = sent.length;
+  assert.strictEqual(await tasksMod.runCheck('first', uid), 'bounced');
+  await settle();
+  assert.strictEqual(notes.filter(x => x.id === 120 && /^Email bounced: our booking email to /.test(x.body)).length, 1);
+  assert.strictEqual(openActs(120).filter(x => x.summary === 'WhatsApp: email bounced, ask for the right email').length, 1);
+  calBookings[uid] = { status: 'accepted', start: callAt.toISOString() };
+  assert.strictEqual(await tasksMod.HANDLERS.second(uid), 'stopped:bounced');
+  assert.deepStrictEqual(sent.slice(before).map(e => e.subject), ['An email to a lead bounced'], 'one alert, no second email');
+});
+
+test('bounce: a "(Delay)" notice is not a bounce, and a real reply next to nothing else is still a reply', async () => {
+  const gm = require(path.join(tmp, 'lib', 'gmail.js'));
+  assert.strictEqual(gm.isBounce(BOUNCE), true);
+  assert.strictEqual(gm.isBounce(Object.assign({}, BOUNCE, { subject: 'Delivery Status Notification (Delay)' })), false);
+  assert.strictEqual(gm.isBounce({ from: 'Asha Rao <asha@example.com>', subject: 'Re: One step left', ct: 'multipart/alternative' }), false);
+  assert.strictEqual(gm.isBounce({ from: 'postmaster@outlook.com', subject: 'Undeliverable: One step left', contentType: 'multipart/report; report-type=delivery-status' }), true);
 });
 
 test('V2 (25 Nov, lead 142): a reply to the nudge removes our open "follow up (didn\'t book)" reminder (never Done); a hand-made reminder stays', async () => {
