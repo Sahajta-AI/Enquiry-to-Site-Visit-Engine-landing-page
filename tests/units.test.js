@@ -367,3 +367,79 @@ test('store counter: on Upstash the count and its expiry are set in one step (an
     if (saved.token === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN; else process.env.UPSTASH_REDIS_REST_TOKEN = saved.token;
   }
 });
+
+// ---------- Short booking notice (Notion "Open Sundays… notice safe to change", 26 Nov, parts 3, 5 and 7) ----------
+test('notice grid: for a notice of 3, 5, 16 and 24 h, booked in the morning, afternoon, at 8:59 pm and 9:05 pm, in India, Dubai and the US: the second email is never after the call, never within 90 minutes of it, never in the lead\'s night unless it goes at once in Indian day hours, and skipped only for a close call', () => {
+  const { secondPlan } = require('../lib/tasks');
+  const H = 3600000;
+  const zones = ['Asia/Kolkata', 'Asia/Dubai', 'America/New_York'];
+  const bookedAt = [[10, 0], [15, 0], [20, 59], [21, 5]]; // local time in the lead's zone
+  let checked = 0;
+  for (const tz of zones) for (const [hh, mm] of bookedAt) for (const notice of [3, 5, 16, 24]) for (const extra of [0, 0.5, 2, 9]) {
+    const sentAt = t.zonedTimeToUtc('2026-12-02', hh, mm, tz).getTime();
+    const start = sentAt + (notice + extra) * H;
+    const p = secondPlan(sentAt, start, tz);
+    const label = `${tz} booked ${hh}:${mm} notice ${notice}h +${extra}h`;
+    checked++;
+    if (p.skip) {
+      // skipped only when the latest sensible time (call - 90 min) is under an hour after booking, or at night with no room
+      const roomy = start - 90 * 60000 >= sentAt + H;
+      if (p.skip === 'call-soon') assert.ok(!roomy || start - sentAt < 2 * H, label);
+      else assert.strictEqual(p.skip, 'night', label);
+      continue;
+    }
+    assert.ok(p.dueAt >= sentAt, label + ': not before the booking email');
+    assert.ok(p.dueAt <= start - 90 * 60000, label + ': at least 90 minutes before the call');
+    assert.ok(p.dueAt <= sentAt + 5 * H || t.zoneParts(new Date(sentAt + 5 * H), tz).hour >= 21 || t.zoneParts(new Date(sentAt + 5 * H), tz).hour < 8, label + ': never later than 5 h, unless held for the night');
+    const h = t.zoneParts(new Date(p.dueAt), tz).hour;
+    if (p.now) {
+      const ist = t.zoneParts(new Date(sentAt), 'Asia/Kolkata').hour;
+      assert.ok(ist >= 8 && ist < 21, label + ': "at once" only in Indian day hours');
+    } else {
+      assert.ok(h >= 8 && h < 21, label + ': not in the lead\'s night (' + h + ')');
+    }
+  }
+  assert.strictEqual(checked, 3 * 4 * 4 * 4);
+});
+
+test('notice grid: exact cases', () => {
+  const { secondPlan } = require('../lib/tasks');
+  const at = (d, hh, mm) => t.zonedTimeToUtc(d, hh, mm, 'Asia/Kolkata').getTime();
+  const ist = (ms) => { const d = t.describe(new Date(ms), 'Asia/Kolkata'); return `${d.dayShort} ${d.time}`; };
+  // 16 h notice (today): booked 10 am, call next day 4 pm -> 5 hours later, 3 pm
+  assert.strictEqual(ist(secondPlan(at('2026-12-02', 10, 0), at('2026-12-03', 16, 0), 'Asia/Kolkata').dueAt), 'Wed 2 Dec 3:00 pm');
+  // 5 h notice: booked 10 am, call 3:30 pm same day -> call - 90 min = 2 pm (earlier than 3 pm)
+  assert.strictEqual(ist(secondPlan(at('2026-12-02', 10, 0), at('2026-12-02', 15, 30), 'Asia/Kolkata').dueAt), 'Wed 2 Dec 2:00 pm');
+  // 3 h notice: booked 10 am, call 1 pm -> call - 90 min is 11:30, only 1.5 h after: sent then
+  assert.strictEqual(ist(secondPlan(at('2026-12-02', 10, 0), at('2026-12-02', 13, 0), 'Asia/Kolkata').dueAt), 'Wed 2 Dec 11:30 am');
+  // call 2 h 20 min away: call - 90 min is 50 min after booking -> skipped
+  assert.deepStrictEqual(secondPlan(at('2026-12-02', 10, 0), at('2026-12-02', 12, 20), 'Asia/Kolkata'), { skip: 'call-soon' });
+  // call 1 h 50 min away -> skipped
+  assert.deepStrictEqual(secondPlan(at('2026-12-02', 10, 0), at('2026-12-02', 11, 50), 'Asia/Kolkata'), { skip: 'call-soon' });
+  // booked 4 pm for 6 pm the next day: 9 pm is night -> 8 am
+  assert.strictEqual(ist(secondPlan(at('2026-12-02', 16, 0), at('2026-12-03', 18, 0), 'Asia/Kolkata').dueAt), 'Thu 3 Dec 8:00 am');
+  // booked 7 pm for 9 am the next day: 8 am is later than 7:30 am (call - 90 min), 7 pm is Indian day -> at once
+  const p = secondPlan(at('2026-12-02', 19, 0), at('2026-12-03', 9, 0), 'Asia/Kolkata');
+  assert.deepStrictEqual(p, { dueAt: at('2026-12-02', 19, 0), now: true });
+  // booked 9:05 pm for 9 am the next day: same, but it's night in India -> skipped
+  assert.deepStrictEqual(secondPlan(at('2026-12-02', 21, 5), at('2026-12-03', 9, 0), 'Asia/Kolkata'), { skip: 'night' });
+});
+
+test('same-day call words: the booking email says "See you today / tomorrow / on Thursday" by the lead\'s own date, and a call today gets the softer numbers line', () => {
+  const now = new Date('2026-12-02T06:00:00.000Z'); // Wed 2 Dec, 11:30 am IST; 10 am Dubai; 1 am New York
+  assert.strictEqual(t.relativeDay(new Date('2026-12-02T12:00:00.000Z'), now, 'Asia/Kolkata'), 'today');
+  assert.strictEqual(t.relativeDay(new Date('2026-12-03T05:00:00.000Z'), now, 'Asia/Kolkata'), 'tomorrow');
+  assert.strictEqual(t.relativeDay(new Date('2026-12-03T20:00:00.000Z'), now, 'Asia/Kolkata'), ''); // Fri 4 Dec in India
+  // New York: it is still Wed 2 Dec there too, and 11 pm Wed 2 Dec NY is "today"; 2 am Thu NY is "tomorrow"
+  assert.strictEqual(t.relativeDay(new Date('2026-12-03T04:00:00.000Z'), now, 'America/New_York'), 'today');
+  assert.strictEqual(t.relativeDay(new Date('2026-12-03T07:00:00.000Z'), now, 'America/New_York'), 'tomorrow');
+  const base = { first: 'Asha', d: t.describe(new Date('2026-12-02T12:00:00.000Z'), 'Asia/Kolkata'), meetLink: 'https://meet.google.com/x', reschedLink: 'https://cal.com/reschedule/u', preCallLink: 'https://x/thank-you', waLink: 'https://wa.me/1', videoSet: true };
+  const today = emails.bookingEmail(Object.assign({ rel: 'today' }, base)).text;
+  assert.match(today, /\nSee you today,\nShubhang$/);
+  assert.match(today, /3\. If you can, keep last month’s ad spend, leads and site visits handy\./);
+  assert.ok(!/Have three numbers/.test(today));
+  assert.match(emails.bookingEmail(Object.assign({ rel: 'tomorrow' }, base)).text, /\nSee you tomorrow,\nShubhang$/);
+  const later = emails.bookingEmail(Object.assign({ rel: '' }, base)).text;
+  assert.match(later, /\nSee you on Wednesday,\nShubhang$/);
+  assert.match(later, /3\. Have three numbers from last month ready/);
+});

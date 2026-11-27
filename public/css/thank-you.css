@@ -514,6 +514,10 @@ body.ty {
   border-top: 1px solid var(--ty-line);
 }
 
+/* A call today: the numbers list is hidden (the title says it), so the next row has no divider above it */
+.ty-hw-row[hidden] { display: none; }
+.ty-hw-row[hidden] + .ty-hw-row { margin-top: 0; padding-top: 0; border-top: 0; }
+
 .ty-ocheck {
   flex: 0 0 24px;
   width: 24px;

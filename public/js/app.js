@@ -580,6 +580,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let isSubmittingLead = false;
 
   const monthSlotsCache = {};
+  const monthSlotsLoading = {}; // one load per month at a time (the preload on screen 3 is reused)
+  const SLOTS_MAX_AGE = 2 * 60 * 1000; // older open times are loaded again (Notion, 26 Nov: short booking notice)
 
   async function preloadMonthSlots(year, month) {
     const today = new Date();
@@ -588,19 +590,48 @@ document.addEventListener('DOMContentLoaded', () => {
     const monthStr = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}`;
     const tz = wizardState.timezone || 'Asia/Kolkata';
     const cacheKey = `${monthStr}_${tz}`;
-    if (monthSlotsCache[cacheKey]) return monthSlotsCache[cacheKey];
+    const hit = monthSlotsCache[cacheKey];
+    if (hit && Date.now() - hit.fetchedAt < SLOTS_MAX_AGE) return hit;
+    if (monthSlotsLoading[cacheKey]) return monthSlotsLoading[cacheKey];
 
-    try {
-      const monthRes = await fetch(`/api/available-slots?month=${monthStr}&timeZone=${encodeURIComponent(tz)}`);
-      if (monthRes.ok) {
-        const monthData = await monthRes.json();
-        if (monthData && monthData.availableDates) {
-          monthSlotsCache[cacheKey] = monthData;
-          return monthData;
+    monthSlotsLoading[cacheKey] = (async () => {
+      try {
+        const asked = Date.now();
+        const monthRes = await fetch(`/api/available-slots?month=${monthStr}&timeZone=${encodeURIComponent(tz)}`);
+        if (monthRes.ok) {
+          const monthData = await monthRes.json();
+          if (monthData && monthData.availableDates) {
+            monthData.fetchedAt = Date.now();
+            // The server's clock, so a phone with a wrong clock still hides the right times
+            monthData.clockOffset = Number.isFinite(monthData.serverNow) ? monthData.serverNow - Math.round((asked + Date.now()) / 2) : 0;
+            monthSlotsCache[cacheKey] = monthData;
+            return monthData;
+          }
         }
-      }
-    } catch (err) {}
-    return null;
+      } catch (err) {}
+      return null;
+    })().finally(() => { delete monthSlotsLoading[cacheKey]; });
+    return monthSlotsLoading[cacheKey];
+  }
+
+  // Only the times that can still be booked: a time earlier than now + Cal.com's notice has gone since the list loaded
+  // (with a short notice, today's early times expire while someone fills the form). Without the exact times or the
+  // notice (an old server), the list is used as it came.
+  function liveSlots(monthData) {
+    if (!monthData) return monthData;
+    const starts = monthData.startsByDate;
+    if (!starts || !Number.isFinite(monthData.noticeMinutes)) return monthData;
+    const cutoff = Date.now() + (monthData.clockOffset || 0) + monthData.noticeMinutes * 60000;
+    const slotsByDate = {};
+    const availableDates = [];
+    (monthData.availableDates || []).forEach(day => {
+      const times = (monthData.slotsByDate[day] || []).filter((tm, i) => {
+        const at = new Date((starts[day] || [])[i]).getTime();
+        return !Number.isFinite(at) || at >= cutoff;
+      });
+      if (times.length) { slotsByDate[day] = times; availableDates.push(day); }
+    });
+    return Object.assign({}, monthData, { slotsByDate, availableDates });
   }
 
   function renderTimeZoneLine() {
@@ -630,6 +661,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function loadCalComEmbed() {
     const container = document.getElementById('cal-embed-container');
     if (!container) return;
+    // The time screen opens: open times are loaded again (a preload still loading, or under 30 s old, is used)
+    Object.keys(monthSlotsCache).forEach(k => { if (Date.now() - monthSlotsCache[k].fetchedAt > 30 * 1000) delete monthSlotsCache[k]; });
 
     isSubmittingLead = false;
     picker.monthChecked = false;
@@ -650,6 +683,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const tz = wizardState.timezone || 'Asia/Kolkata';
       const cacheKey = `${monthStr}_${tz}`;
       let monthData = monthSlotsCache[cacheKey];
+      if (monthData && Date.now() - monthData.fetchedAt >= SLOTS_MAX_AGE) monthData = null; // too old: load again
 
       if (!monthData) {
         container.innerHTML = `<p class="cal-status">${msg('msgFinding')}</p>`;
@@ -693,8 +727,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      const availableDates = monthData?.availableDates || [];
-      const slotsByDate = monthData?.slotsByDate || {};
+      const live = liveSlots(monthData);
+      const availableDates = live?.availableDates || [];
+      const slotsByDate = live?.slotsByDate || {};
 
       if (availableDates.length > 0 && !calendarViewTracked) {
         calendarViewTracked = true;
@@ -795,7 +830,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const isConfirmDisabled = !picker.selectedDate || !picker.selectedTimeStr;
 
       container.innerHTML = `
-        ${picker.bookingError ? `<p class="cal-error" role="alert">${msg('msgBookingError')}</p>` : ''}
+        ${picker.bookingError ? `<p class="cal-error" role="alert">${msg(picker.bookingError === 'taken' ? 'msgTaken' : 'msgBookingError')}</p>` : ''}
         <div class="month-calendar-wrapper">
           <div class="cal-layout-row">
             <div>
@@ -889,9 +924,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // The booking failed: stay on the time screen, show the message, reload the times, let the visitor pick again
-  function showBookingFailure() {
+  function showBookingFailure(kind) {
     isSubmittingLead = false;
-    picker.bookingError = true;
+    picker.bookingError = kind === 'taken' ? 'taken' : true;
+    if (kind === 'taken') picker.selectedTimeStr = null;
     Object.keys(monthSlotsCache).forEach(k => delete monthSlotsCache[k]);
     if (typeof pickerRender === 'function') pickerRender();
   }
@@ -980,6 +1016,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!succeeded) {
       if (!resume && result && result.code === 'email') { askToFixEmail(result.error); return; }
       if (result && result.code === 'already-booked') { showAlreadyBooked(result); return; }
+      // The time is no longer open (taken, or past the booking notice): fresh times and "pick another"
+      if (result && result.code === 'taken') { showBookingFailure('taken'); return; }
       showBookingFailure();
       return;
     }

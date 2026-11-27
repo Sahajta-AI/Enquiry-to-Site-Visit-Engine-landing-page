@@ -44,6 +44,9 @@ const calNoMeet = new Set(); // uids whose booking has no Meet link
 const calByEmail = {};     // email -> [{createdAt,start,status}]
 const calUpcoming = [];    // the event's upcoming bookings (the one-call-per-person check)
 let calUpcomingDown = false;
+let slotGone = false;
+let monthSlots = {}; // the month's open times Cal.com gives
+let eventNotice = 960; // Cal.com's minimum booking notice, minutes // the picked time is no longer open on Cal.com
 let gmailFailures = 0;
 let gmailFailStatus = 500; // the status of a failing Gmail answer (a 4xx is a clear refusal, a 5xx may have sent it)
 let gmailLateReply = false;
@@ -82,7 +85,7 @@ global.fetch = async (url, opts) => {
   }
   if (/api\.cal\.com\/v2\/bookings\/[^?]+$/.test(url) && (opts.method || 'GET') === 'GET') {
     const uid = decodeURIComponent(url.split('/').pop());
-    return json({ data: { status: calStatus[uid] || 'accepted', start: calStart[uid] || '2026-11-11T10:35:00.000Z', meetingUrl: calNoMeet.has(uid) ? '' : 'https://meet.google.com/live-link', eventTypeId: calEventType[uid] || 7785231, ...(uid === 'bk-move' ? { attendees: [{ email: 'move@example.com' }] } : {}) } });
+    return json({ data: { status: calStatus[uid] || 'accepted', start: calStart[uid] || '2027-11-10T10:35:00.000Z', meetingUrl: calNoMeet.has(uid) ? '' : 'https://meet.google.com/live-link', eventTypeId: calEventType[uid] || 7785231, ...(uid === 'bk-move' ? { attendees: [{ email: 'move@example.com' }] } : {}) } });
   }
   if (/api\.cal\.com\/v2\/bookings\/[^/?]+\/reschedule$/.test(url) && opts.method === 'POST') {
     const uid = decodeURIComponent(url.split('/').slice(-2)[0]);
@@ -107,6 +110,11 @@ global.fetch = async (url, opts) => {
     metaCalls.push({ url, body, event: body.data[0] });
     return json({ events_received: 1, messages: [], fbtrace_id: 'trace1' });
   }
+  if (url.startsWith('https://api.cal.com/v2/slots/available') && /startTime=[^&]*T\d\d:\d\d:00\.000Z&endTime=[^&]*&eventTypeId=\d+$/.test(url) && !(refuseStarts.length + takenStarts.length)) {
+    // the exact-time check after a refused booking: still open, unless the test says the time has gone
+    const mid = new Date(new Date(url.match(/startTime=([^&]+)/)[1]).getTime() + 60000).toISOString();
+    return json({ data: { slots: slotGone ? {} : { d: [{ time: mid }] } } });
+  }
   if (url.startsWith('https://api.cal.com/v2/slots/available') && /startTime=[^&]*T\d\d:\d\d:00\.000Z&endTime=[^&]*&eventTypeId=\d+$/.test(url) && refuseStarts.length + takenStarts.length) {
     // the exact-time check after a refused move: a refused (not taken) time is still open
     const mid = new Date(new Date(url.match(/startTime=([^&]+)/)[1]).getTime() + 60000).toISOString();
@@ -114,7 +122,10 @@ global.fetch = async (url, opts) => {
   }
   if (url.startsWith('https://api.cal.com/v2/slots/available')) {
     if (slotsMode === 'fail') return json({ error: 'down' }, 500);
-    return json({ data: { slots: {} } });
+    return json({ data: { slots: monthSlots } });
+  }
+  if (/^https:\/\/api\.cal\.com\/v2\/event-types\/\d+$/.test(url)) {
+    return json({ data: { bookingUrl: 'https://cal.com/shubhang-sethi/enquiry-to-site-visit-engine', minimumBookingNotice: eventNotice } });
   }
   if (url === 'https://api.cal.com/v2/bookings' && opts.method === 'POST') {
     if (calMode === 'refuse') return json({ error: 'slot taken' }, 400);
@@ -167,7 +178,7 @@ function webhookBody(over) {
   return JSON.stringify({
     triggerEvent: 'BOOKING_CREATED',
     payload: Object.assign({
-      uid: 'bk-1', eventTypeId: 7785231, startTime: '2026-11-11T10:35:00.000Z',
+      uid: 'bk-1', eventTypeId: 7785231, startTime: '2027-11-10T10:35:00.000Z', // a Wednesday, ahead (the second email never goes after the call)
       attendees: [{ name: 'Asha Rao', email: 'asha@example.com', timeZone: 'Asia/Kolkata' }],
       videoCallData: { url: 'https://meet.google.com/abc-defg-hij' }
     }, over || {})
@@ -200,7 +211,7 @@ async function runQueue(until) {
     results.push((await r.json()).result);
   }
 }
-const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calEventType)) delete calEventType[k]; rescheduleCalls.length = 0; takenStarts.length = 0; refuseStarts.length = 0; noNewUid = false; for (const k of Object.keys(calStart)) delete calStart[k]; calNoMeet.clear(); for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; gmailFailStatus = 500; gmailLateReply = false; publishDown = false; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; calUpcoming.length = 0; calUpcomingDown = false; };
+const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calEventType)) delete calEventType[k]; rescheduleCalls.length = 0; takenStarts.length = 0; refuseStarts.length = 0; noNewUid = false; for (const k of Object.keys(calStart)) delete calStart[k]; calNoMeet.clear(); for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; gmailFailStatus = 500; gmailLateReply = false; publishDown = false; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; calUpcoming.length = 0; calUpcomingDown = false; slotGone = false; monthSlots = {}; eventNotice = 960; };
 
 test('8.1: a booking sends the first email at once; the same webhook twice sends one; a wrong secret sends none', async () => {
   reset();
@@ -214,12 +225,12 @@ test('8.1: a booking sends the first email at once; the same webhook twice sends
   assert.strictEqual(firsts.length, 1);
   const e = firsts[0];
   assert.strictEqual(e.from, 'Shubhang Sethi <shubhang@sahajta.com>');
-  assert.strictEqual(e.subject, 'Your Lead Conversion Clarity Call is scheduled for Wed 11 Nov, 4:05 pm IST');
+  assert.strictEqual(e.subject, 'Your Lead Conversion Clarity Call is scheduled for Wed 10 Nov, 4:05 pm IST');
   assert.match(e.text, /Hi Asha, it’s Shubhang/);
   assert.match(e.text, /https:\/\/meet\.google\.com\/abc-defg-hij/);
   assert.match(e.text, /https:\/\/preview\.example\.test\/thank-you/);
   assert.match(e.text, /https:\/\/cal\.com\/reschedule\/bk-1/);
-  assert.match(e.text, /https:\/\/wa\.me\/919731173205\?text=YES%2C%20confirming%20my%20Lead%20Conversion%20Clarity%20Call%20on%20Wed%2011%20Nov%20at%204%3A05%20pm\.%20Asha/);
+  assert.match(e.text, /https:\/\/wa\.me\/919731173205\?text=YES%2C%20confirming%20my%20Lead%20Conversion%20Clarity%20Call%20on%20Wed%2010%20Nov%20at%204%3A05%20pm\.%20Asha/);
   assert.strictEqual((e.html.match(/<b>/g) || []).length, 3);
   // the second email and the 10-minute check were scheduled
   assert.strictEqual(published.length, 2);
@@ -459,7 +470,7 @@ test('8.2: the second email goes under the first, in the same thread, with Re:',
   assert.strictEqual(second.subject, 'Re: ' + first.subject);
   assert.strictEqual(second.threadId, first.threadId);
   assert.strictEqual(second.inReplyTo, `<${first.id}@mail.gmail.com>`);
-  assert.match(second.text, /Shubhang here\. I’ll be on the call with you myself, on Wednesday, 11 November, at 4:05 pm IST/);
+  assert.match(second.text, /Shubhang here\. I’ll be on the call with you myself, on Wednesday, 10 November, at 4:05 pm IST/);
   assert.match(second.text, /https:\/\/meet\.google\.com\/live-link/);
 });
 
@@ -478,9 +489,9 @@ test('8.2: no second email when the booking was cancelled or moved, or someone r
 test('8.2: a second email due at night is held until 8 am in the lead\'s zone', async () => {
   reset();
   const realNow = Date.now;
-  // Booked at 4:00 pm IST: 5 hours later is 9:00 pm, so the second email waits until 8 am the next day
+  // Booked at 4:00 pm IST for 6 pm the next day: 5 hours later is 9:00 pm, so the second email waits until 8 am
   Date.now = () => new Date('2026-11-11T10:30:00.000Z').getTime();
-  try { await sendWebhook(webhookBody({ uid: 'bk-night' })); } finally { Date.now = realNow; }
+  try { await sendWebhook(webhookBody({ uid: 'bk-night', startTime: '2026-11-12T12:30:00.000Z' })); } finally { Date.now = realNow; }
   const secondJob = published.find(p => p.notBefore * 1000 === new Date('2026-11-12T02:30:00.000Z').getTime());
   assert.ok(secondJob, 'second email is due at 8:00 am IST the next day');
 });
@@ -493,7 +504,37 @@ test('8.2: the queue fails after the booking email went: Shubhang is alerted to 
   assert.strictEqual(sent.filter(e => e.to === 'asha@example.com').length, 1, 'the booking email went');
   const a = alertsSent.filter(x => /Second email not scheduled/.test(x.subject));
   assert.strictEqual(a.length, 1, 'one alert');
-  assert.match(a[0].text, /^Second email not scheduled: Asha Rao, Wed 11 Nov at 4:05 pm\. .*Send it by hand around .* IST, as a reply under the first\.$/);
+  assert.match(a[0].text, /^Second email not scheduled: Asha Rao, Wed 10 Nov at 4:05 pm\. .*Send it by hand around .* IST, as a reply under the first\.$/);
+});
+
+test('26 Nov same-day call (5 h notice): booked 10 am for 3:30 pm -> "See you today" and the softer numbers line; the second email due at 2 pm; run when the call is under an hour away it stops, nothing goes after the call', async () => {
+  reset();
+  const start = '2026-12-02T10:00:00.000Z'; // Wed 2 Dec, 3:30 pm IST
+  calStart['bk-sd'] = start;
+  await atTime('2026-12-02T04:30:00.000Z', () => sendWebhook(webhookBody({ uid: 'bk-sd', startTime: start }))); // 10 am IST
+  const first = sent.filter(e => e.to === 'asha@example.com');
+  assert.strictEqual(first.length, 1);
+  assert.match(first[0].text, /\nSee you today,\nShubhang$/);
+  assert.match(first[0].text, /3\. If you can, keep last month’s ad spend, leads and site visits handy\./);
+  const rec = await store.get('booking:bk-sd');
+  assert.strictEqual(rec.second.dueAt, new Date('2026-12-02T08:30:00.000Z').getTime(), 'call - 90 min: 2 pm IST, earlier than 10 am + 5 h');
+  // The queue runs it late, 40 minutes before the call: stopped, nothing sent
+  assert.strictEqual(await atTime('2026-12-02T09:20:00.000Z', () => tasks.runTask('second', 'bk-sd', 1)), 'stopped:call-passed');
+  // After the call too
+  reset();
+  calStart['bk-sd2'] = start;
+  await atTime('2026-12-02T04:30:00.000Z', () => sendWebhook(webhookBody({ uid: 'bk-sd2', startTime: start })));
+  assert.strictEqual(await atTime('2026-12-02T11:00:00.000Z', () => tasks.runTask('second', 'bk-sd2', 1)), 'stopped:call-passed');
+  assert.strictEqual(sent.filter(e => /^Re: /.test(e.subject)).length, 0, 'no second email after the call');
+});
+
+test('26 Nov call under 2 hours away: no second email is queued at all (the booking email has the Meet link)', async () => {
+  reset();
+  const start = '2026-12-02T06:10:00.000Z'; // 11:40 am IST, booked 10 am
+  await atTime('2026-12-02T04:30:00.000Z', () => sendWebhook(webhookBody({ uid: 'bk-close', startTime: start })));
+  const rec = await store.get('booking:bk-close');
+  assert.deepStrictEqual(rec.second, { skipped: 'call-soon' });
+  assert.strictEqual(published.length, 1, 'only the 10-minute check');
 });
 
 test('8.1: a failing Gmail is tried 3 times, then Shubhang is alerted both ways, and no second email goes', async () => {
@@ -505,7 +546,7 @@ test('8.1: a failing Gmail is tried 3 times, then Shubhang is alerted both ways,
   assert.strictEqual(sent.filter(e => e.to === 'asha@example.com').length, 0);
   assert.strictEqual(alertsSent.length, 1, 'backup alert through the transactional service');
   assert.strictEqual(alertsSent[0].to[0], 'backup@example.test');
-  assert.match(alertsSent[0].text, /^Booking email not sent: Asha Rao, Wed 11 Nov at 4:05 pm\. Send both emails by hand: the first now, the second about 5 hours later, as a reply\.$/);
+  assert.match(alertsSent[0].text, /^Booking email not sent: Asha Rao, Wed 10 Nov at 4:05 pm\. Send it by hand now\. Then send the second one at \w{3} \d{1,2} \w{3}, \d{1,2}:\d{2} (am|pm) IST, as a reply under the first\.$/);
 });
 
 const Q1_FIT = 'We run paid ads but leads go cold because follow-up is slow';
@@ -1175,6 +1216,29 @@ test('26 Nov "check your email" only for Cal.com\'s real email refusal: another 
     "status 400: Attendee with this email can't book because the maximum number of active bookings has been reached.",
     'status 400: slot taken', 'status 409: Booking already exists', 'status 400: Invalid time slot', 'status 500: Internal server error', '', 'status 400: email'])
     assert.strictEqual(is(no), false, no);
+});
+
+test('26 Nov short notice: a time that is no longer open -> 409 "taken" ("pick another"), no alert, no booking email; open times carry each exact time and Cal.com\'s notice', async () => {
+  reset();
+  calMode = 'refuse';
+  slotGone = true;
+  const r = await post('/api/submit-lead', bookingBody({ email: 'gone@skyline.in', name: 'Gone Person' }));
+  assert.strictEqual(r.status, 409);
+  const body = await r.json();
+  assert.strictEqual(body.code, 'taken');
+  assert.strictEqual(body.error, 'That time was just taken. Please pick another.');
+  await new Promise(x => setTimeout(x, 100));
+  assert.ok(!sent.some(e => /Gone Person/.test(e.text || '')), 'no alert: not a failure');
+
+  reset();
+  eventNotice = 300; // Shubhang sets 5 hours: read from Cal.com, never hard-coded
+  require(path.join(tmp, 'lib', 'cal.js'))._resetEventCache();
+  monthSlots = { '2026-11-30': [{ time: '2026-11-30T04:30:00.000Z' }, { time: '2026-11-30T09:10:00.000Z' }] };
+  const j = await (await realFetch(base + '/api/available-slots?month=2026-11&timeZone=Asia/Kolkata')).json();
+  assert.deepStrictEqual(j.slotsByDate['2026-11-30'], ['10:00 AM', '02:40 PM']);
+  assert.deepStrictEqual(j.startsByDate['2026-11-30'], ['2026-11-30T04:30:00.000Z', '2026-11-30T09:10:00.000Z']);
+  assert.strictEqual(j.noticeMinutes, 300);
+  assert.ok(Math.abs(j.serverNow - Date.now()) < 5000);
 });
 
 test('27 Nov one upcoming call per person: the same email -> no new booking, their call and reschedule link shown, one alert, nudges stopped', async () => {

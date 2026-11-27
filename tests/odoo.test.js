@@ -1114,7 +1114,7 @@ test('V2 Odoo 8: reminder timing: booked the evening before (after 8 pm) or on t
   acts = [];
   await ol._ensureCallReminders(lead, start, new Date('2026-11-27T03:00:00.000Z')); // Fri 8:30 am IST: the call day
   assert.deepStrictEqual(titlesOf(90), ['After the call: update the stage', 'WhatsApp: call-day reminder']);
-  assert.match(openActs(90).find(x => x.summary === 'WhatsApp: call-day reminder').note, /Send as soon as you see this\. Remind them of today&#39;s call time\./);
+  assert.match(openActs(90).find(x => x.summary === 'WhatsApp: call-day reminder').note, /^(<p>)?Call today at \d{1,2}:\d{2} (am|pm) IST\. Send as soon as you see this\./);
   acts = [];
   await ol._ensureCallReminders(lead, start, new Date('2026-11-26T13:00:00.000Z')); // Thu 6:30 pm IST
   assert.strictEqual(openActs(90).length, 3, 'before 8 pm the evening before: all three');

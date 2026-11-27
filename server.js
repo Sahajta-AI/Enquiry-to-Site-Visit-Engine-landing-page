@@ -402,6 +402,7 @@ app.get('/api/available-slots', async (req, res) => {
       if (calRes.ok) {
         const data = await calRes.json();
         const slotsByDate = {};
+        const startsByDate = {}; // the exact moment of each time, same order: the form hides times that have gone
         const availableDates = [];
 
         if (data && data.data && data.data.slots) {
@@ -409,6 +410,7 @@ app.get('/api/available-slots', async (req, res) => {
             const list = data.data.slots[dateKey];
             if (Array.isArray(list) && list.length > 0) {
               const formattedTimes = [];
+              const starts = [];
               list.forEach(slot => {
                 const dt = new Date(slot.time || slot.startTime);
                 const timeFormatted = dt.toLocaleTimeString('en-US', {
@@ -416,16 +418,19 @@ app.get('/api/available-slots', async (req, res) => {
                   minute: '2-digit',
                   timeZone: userTimeZone
                 });
-                if (!formattedTimes.includes(timeFormatted)) formattedTimes.push(timeFormatted);
+                if (!formattedTimes.includes(timeFormatted)) { formattedTimes.push(timeFormatted); starts.push(dt.toISOString()); }
               });
               if (formattedTimes.length > 0) {
                 slotsByDate[dateKey] = formattedTimes;
+                startsByDate[dateKey] = starts;
                 availableDates.push(dateKey);
               }
             }
           }
         }
-        return res.json({ month: monthStr, slotsByDate, availableDates });
+        // Cal.com's booking notice (minutes; null if not known): a time earlier than now + notice can't be booked
+        const noticeMinutes = await lcal.noticeMinutes({ maxWaitMs: 1000 }).catch(() => null);
+        return res.json({ month: monthStr, slotsByDate, startsByDate, availableDates, noticeMinutes, serverNow: Date.now() });
       }
     } catch (err) {
       console.warn('Cal API month slots error:', logsafe.safe(err.message));
@@ -747,6 +752,15 @@ app.post('/api/submit-lead', async (req, res) => {
         let dup = null;
         try { dup = await lcal.upcomingForPerson(email, null); } catch (e) { /* the generic message */ }
         return alreadyBooked(dup);
+      }
+      // The time is no longer open (someone took it, or it is now inside Cal.com's booking notice): the page loads
+      // fresh times and says "That time was just taken. Please pick another." Not a failure: no alert.
+      if (!timedOut && calRefusal) {
+        const open = await lcal.isSlotOpen(startDt.getTime()).catch(() => null);
+        if (open === false) {
+          console.log('📅 [Booking]: the picked time is no longer open, asked to pick another');
+          return res.status(409).json({ success: false, ok: false, code: 'taken', error: 'That time was just taken. Please pick another.' });
+        }
       }
       // Refused because of the email (Cal.com's deliverability check): the page asks them to fix it, time kept
       const emailRefused = !nudgeRec && !timedOut && isEmailRefusal(calRefusal);

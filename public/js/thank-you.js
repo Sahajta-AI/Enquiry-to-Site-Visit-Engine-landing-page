@@ -156,10 +156,29 @@
     try { if (window.SVTrack) window.SVTrack.newEvent(name, params || {}); } catch (e) {}
   }
 
+  // The call is today (in the booking's own zone): no time to gather numbers (Notion, 26 Nov, part 5: same-day calls)
+  function callIsToday() {
+    if (!booking) return false;
+    try {
+      var today = new Intl.DateTimeFormat('en-CA', { timeZone: booking.timezone || 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+      return booking.slotDate === today;
+    } catch (e) { return false; }
+  }
+
+  // "Get these 3 numbers ready" (step 2 with the video), or for a call today one softer line and no list
+  function setHomework() {
+    var title = $('ty-hw-title');
+    var list = document.querySelector('.ty-hw-row');
+    if (!title || !title.firstElementChild) return;
+    var step = settings.briefingVideoUrl ? '2. ' : '';
+    var today = callIsToday();
+    title.firstElementChild.textContent = step + (today ? 'If you can, keep last month’s ad spend, leads and site visits handy.' : 'Get these 3 numbers ready');
+    show(list, !today);
+  }
+
   // ---------- Settings-driven parts ----------
   function applySettings() {
     var hasVideo = !!settings.briefingVideoUrl;
-    var hwTitle = $('ty-hw-title').firstElementChild;
 
     show($('ty-video-step'), hasVideo);
     if (!hasVideo) {
@@ -168,12 +187,10 @@
     }
     show($('ty-watch'), hasVideo);
 
+    setHomework();
     if (hasVideo) {
-      hwTitle.textContent = '2. Get these 3 numbers ready'; // with the video it is step 2
       setupVideo();
       useVideoFile();
-    } else {
-      hwTitle.textContent = 'Get these 3 numbers ready';
     }
 
     var demo = String(settings.demoWhatsappNumber || '').replace(/\D/g, '');
@@ -392,6 +409,7 @@
     else if (data && data.fromPicker) booking.rescheduleUrl = null;
     try { sessionStorage.setItem('sv_booked', JSON.stringify(booking)); } catch (e) {}
     renderTop();
+    setHomework(); // moved to or from today
     wireButtonLinksOnly();
   }
 
