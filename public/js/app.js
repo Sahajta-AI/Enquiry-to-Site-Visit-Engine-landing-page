@@ -932,8 +932,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof pickerRender === 'function') pickerRender();
   }
 
-  // One upcoming call per person (Notion, 27 Nov): no new booking. The email's owner sees their call and how to move
-  // it; a match on the phone alone shows no details (the link can move the call), only where to find them.
+  // One upcoming call per person (Notion, 27 Nov): no new booking, and no details on the page (no time, no link),
+  // only that the details are in their email and WhatsApp for help.
   function showAlreadyBooked(r) {
     isSubmittingLead = false;
     leaveArmed = false; // they have a call: never a "didn't book"
@@ -948,9 +948,9 @@ document.addEventListener('DOMContentLoaded', () => {
     box.appendChild(title);
     const note = document.createElement('p');
     note.className = 'already-booked-note';
-    const url = r && r.existing && /^https:\/\/cal\.com\//.test(r.existing.rescheduleUrl || '') ? r.existing.rescheduleUrl : '';
-    note.textContent = url
-      ? 'One call per person. Need a different time? You can move it here.'
+    // Never the time or a reschedule link here (Shubhang's review, 27 Nov): anyone can type someone's email
+    note.textContent = /in your email/i.test(title.textContent)
+      ? 'One call per person. Need help? Message us on WhatsApp.'
       : 'One call per person. The details are in the email we sent you. Need help? Message us on WhatsApp.';
     box.appendChild(note);
     const a = document.createElement('a');
@@ -958,8 +958,7 @@ document.addEventListener('DOMContentLoaded', () => {
     a.target = '_blank';
     a.rel = 'noopener';
     const wa = String((r && r.whatsappNumber) || '').replace(/\D/g, '');
-    if (url) { a.href = url; a.textContent = 'Move my call'; box.appendChild(a); }
-    else if (wa) { a.href = 'https://wa.me/' + wa; a.textContent = 'Message us on WhatsApp'; box.appendChild(a); }
+    if (wa) { a.href = 'https://wa.me/' + wa; a.textContent = 'Message us on WhatsApp'; box.appendChild(a); }
     container.replaceChildren(box);
     container.scrollIntoView({ block: 'nearest' });
   }

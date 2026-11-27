@@ -45,6 +45,8 @@ const calByEmail = {};     // email -> [{createdAt,start,status}]
 const calUpcoming = [];    // the event's upcoming bookings (the one-call-per-person check)
 let calUpcomingDown = false;
 let slotGone = false;
+let phoneSearchDown = false; // only the all-upcoming (phone) search fails
+let searchHangs = false; // Cal.com's booking searches never answer
 let monthSlots = {}; // the month's open times Cal.com gives
 let eventNotice = 960; // Cal.com's minimum booking notice, minutes // the picked time is no longer open on Cal.com
 let gmailFailures = 0;
@@ -96,10 +98,12 @@ global.fetch = async (url, opts) => {
   }
   if (url.startsWith('https://api.cal.com/v2/bookings?') && /status=upcoming/.test(url)) {
     assert.ok(url.includes('eventTypeId=7785231'));
-    if (calUpcomingDown) return json({ error: 'down' }, 500);
+    if (searchHangs) return new Promise(() => {});
+    if (calUpcomingDown || phoneSearchDown) return json({ error: 'down' }, 500);
     return json({ data: calUpcoming });
   }
   if (url.startsWith('https://api.cal.com/v2/bookings?')) {
+    if (searchHangs) return new Promise(() => {});
     if (calUpcomingDown) return json({ error: 'down' }, 500);
     const email = decodeURIComponent(url.match(/attendeeEmail=([^&]+)/)[1]);
     assert.ok(url.includes('eventTypeId=7785231'), 'the hidden test copy is checked, not the real event');
@@ -211,7 +215,7 @@ async function runQueue(until) {
     results.push((await r.json()).result);
   }
 }
-const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calEventType)) delete calEventType[k]; rescheduleCalls.length = 0; takenStarts.length = 0; refuseStarts.length = 0; noNewUid = false; for (const k of Object.keys(calStart)) delete calStart[k]; calNoMeet.clear(); for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; gmailFailStatus = 500; gmailLateReply = false; publishDown = false; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; calUpcoming.length = 0; calUpcomingDown = false; slotGone = false; monthSlots = {}; eventNotice = 960; };
+const reset = () => { store._resetMemory(); sent.length = alertsSent.length = published.length = calBookingPosts.length = 0; for (const k of Object.keys(threads)) delete threads[k]; for (const k of Object.keys(calStatus)) delete calStatus[k]; for (const k of Object.keys(calEventType)) delete calEventType[k]; rescheduleCalls.length = 0; takenStarts.length = 0; refuseStarts.length = 0; noNewUid = false; for (const k of Object.keys(calStart)) delete calStart[k]; calNoMeet.clear(); for (const k of Object.keys(calByEmail)) delete calByEmail[k]; gmailFailures = 0; gmailFailStatus = 500; gmailLateReply = false; publishDown = false; metaCalls.length = 0; calMode = 'ok'; slotsMode = 'ok'; calUpcoming.length = 0; calUpcomingDown = false; slotGone = false; phoneSearchDown = false; searchHangs = false; monthSlots = {}; eventNotice = 960; };
 
 test('8.1: a booking sends the first email at once; the same webhook twice sends one; a wrong secret sends none', async () => {
   reset();
@@ -1241,7 +1245,7 @@ test('26 Nov short notice: a time that is no longer open -> 409 "taken" ("pick a
   assert.ok(Math.abs(j.serverNow - Date.now()) < 5000);
 });
 
-test('27 Nov one upcoming call per person: the same email -> no new booking, their call and reschedule link shown, one alert, nudges stopped', async () => {
+test('27 Nov one upcoming call per person: the same email -> no new booking, "the details are in your email" (never the time or the reschedule link: anyone can type an email), one alert, nudges stopped', async () => {
   reset();
   const start = new Date(Date.now() + 2 * 86400000).toISOString();
   calByEmail['nandu@skyline.in'] = [{ uid: 'bk-nandu-1', createdAt: new Date().toISOString(), start, status: 'accepted' }];
@@ -1250,8 +1254,9 @@ test('27 Nov one upcoming call per person: the same email -> no new booking, the
   assert.strictEqual(r.status, 409);
   const body = await r.json();
   assert.strictEqual(body.code, 'already-booked');
-  assert.match(body.error, /^You already have a call booked for \w{3} \d{1,2} \w{3} at \d{1,2}:\d{2} (am|pm) IST\.$/);
-  assert.strictEqual(body.existing.rescheduleUrl, 'https://cal.com/reschedule/bk-nandu-1');
+  assert.strictEqual(body.error, 'You already have a call booked. The details are in your email.');
+  assert.strictEqual(body.existing, null);
+  assert.ok(!JSON.stringify(body).includes('bk-nandu-1'), 'no booking id, no reschedule link');
   assert.strictEqual(calBookingPosts.length, 0, 'no new Cal.com booking');
   assert.ok(await waitFor(() => sent.some(e => e.subject === 'Tried to book again')));
   assert.match(sent.find(e => e.subject === 'Tried to book again').text, /Nandu Wankhade tried to book another call but already has one on .* \(same email\)\. No new booking was made\./);
@@ -1260,6 +1265,25 @@ test('27 Nov one upcoming call per person: the same email -> no new booking, the
   await post('/api/submit-lead', b); // the same try again: still one alert
   await new Promise(x => setTimeout(x, 100));
   assert.strictEqual(sent.filter(e => e.subject === 'Tried to book again').length, 1);
+});
+
+test('27 Nov review: the phone search fails -> the email match still stops the second booking; Cal.com hanging -> the booking goes ahead within about 4 s', async () => {
+  reset();
+  calByEmail['keep@skyline.in'] = [{ uid: 'bk-keep', createdAt: new Date().toISOString(), start: new Date(Date.now() + 86400000).toISOString(), status: 'accepted' }];
+  phoneSearchDown = true; // only the phone search (all upcoming bookings) fails
+  const r = await post('/api/submit-lead', bookingBody({ email: 'keep@skyline.in', whatsapp_number: '9811110008' }));
+  assert.strictEqual(r.status, 409);
+  assert.strictEqual((await r.json()).code, 'already-booked');
+  assert.strictEqual(calBookingPosts.length, 0);
+
+  reset();
+  searchHangs = true; // both searches never answer
+  const t0 = Date.now();
+  const r2 = await post('/api/submit-lead', bookingBody({ email: 'hang@skyline.in', whatsapp_number: '9811110009' }));
+  const took = Date.now() - t0;
+  assert.strictEqual(r2.status, 200, 'booked as normal');
+  assert.strictEqual(calBookingPosts.length, 1);
+  assert.ok(took >= 3900 && took < 6000, 'about the 4 s cap: ' + took);
 });
 
 test('27 Nov one upcoming call per person: another email with the same WhatsApp number (any format) -> no new booking and no details shown', async () => {
@@ -1308,14 +1332,14 @@ test('27 Nov one upcoming call per person: a booking from a nudge link with an u
   assert.ok(n.booked && !n.used, 'nudges stop; the link still opens');
 });
 
-test('27 Nov Cal.com\'s own 1-booking limit refuses: "You already have a call booked", never "check your email"; the call shown when it can be found', async () => {
+test('27 Nov Cal.com\'s own 1-booking limit refuses: "You already have a call booked. The details are in your email.", never "check your email", no extra lookup, no details', async () => {
   reset();
   calMode = 'refuse-limit';
   const r = await post('/api/submit-lead', bookingBody({ email: 'limit@skyline.in', name: 'Limit Person', whatsapp_number: '9811110006' }));
   assert.strictEqual(r.status, 409);
   const body = await r.json();
   assert.strictEqual(body.code, 'already-booked');
-  assert.strictEqual(body.error, 'You already have a call booked with us.');
+  assert.strictEqual(body.error, 'You already have a call booked. The details are in your email.');
   assert.strictEqual(body.existing, null);
   assert.ok(await waitFor(() => sent.some(e => e.subject === 'Tried to book again' && /Limit Person/.test(e.text))));
   assert.match(sent.find(e => e.subject === 'Tried to book again').text, /\(Cal\.com’s 1-booking limit\)/);
@@ -1326,8 +1350,8 @@ test('27 Nov Cal.com\'s own 1-booking limit refuses: "You already have a call bo
   const r2 = await post('/api/submit-lead', bookingBody({ email: 'race@skyline.in', whatsapp_number: '9811110007' }));
   assert.strictEqual(r2.status, 409);
   const b2 = await r2.json();
-  assert.match(b2.error, /^You already have a call booked for /);
-  assert.strictEqual(b2.existing.rescheduleUrl, 'https://cal.com/reschedule/bk-race');
+  assert.strictEqual(b2.error, 'You already have a call booked. The details are in your email.');
+  assert.strictEqual(b2.existing, null, 'never the link, even when the call exists');
 });
 
 test('4 no Cal.com key: the booking fails with the normal error, never a fake "booked", and Shubhang gets the details', async () => {

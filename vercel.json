@@ -106,7 +106,8 @@
   ],
   "functions": {
     "api/index.js": {
-      "excludeFiles": "{public/**,.env*}"
+      "excludeFiles": "{public/**,.env*}",
+      "maxDuration": 60
     }
   },
   "crons": [
