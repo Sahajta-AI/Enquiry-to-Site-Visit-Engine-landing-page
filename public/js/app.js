@@ -896,6 +896,38 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof pickerRender === 'function') pickerRender();
   }
 
+  // One upcoming call per person (Notion, 27 Nov): no new booking. The email's owner sees their call and how to move
+  // it; a match on the phone alone shows no details (the link can move the call), only where to find them.
+  function showAlreadyBooked(r) {
+    isSubmittingLead = false;
+    leaveArmed = false; // they have a call: never a "didn't book"
+    const container = document.getElementById('cal-embed-container');
+    if (!container) return;
+    const box = document.createElement('div');
+    box.className = 'already-booked';
+    box.setAttribute('role', 'status');
+    const title = document.createElement('p');
+    title.className = 'already-booked-title';
+    title.textContent = (r && r.error) || 'You already have a call booked with us.';
+    box.appendChild(title);
+    const note = document.createElement('p');
+    note.className = 'already-booked-note';
+    const url = r && r.existing && /^https:\/\/cal\.com\//.test(r.existing.rescheduleUrl || '') ? r.existing.rescheduleUrl : '';
+    note.textContent = url
+      ? 'One call per person. Need a different time? You can move it here.'
+      : 'One call per person. The details are in the email we sent you. Need help? Message us on WhatsApp.';
+    box.appendChild(note);
+    const a = document.createElement('a');
+    a.className = 'btn-primary already-booked-btn';
+    a.target = '_blank';
+    a.rel = 'noopener';
+    const wa = String((r && r.whatsappNumber) || '').replace(/\D/g, '');
+    if (url) { a.href = url; a.textContent = 'Move my call'; box.appendChild(a); }
+    else if (wa) { a.href = 'https://wa.me/' + wa; a.textContent = 'Message us on WhatsApp'; box.appendChild(a); }
+    container.replaceChildren(box);
+    container.scrollIntoView({ block: 'nearest' });
+  }
+
   function handleSlotConfirmation(slotText) {
     wizardState.bookedSlot = slotText;
     // The Schedule event ID is made before the booking call. A retry reuses it, so Meta counts it once.
@@ -947,6 +979,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // except an email Cal.com can't send to: back to the email field, with the picked time kept.
     if (!succeeded) {
       if (!resume && result && result.code === 'email') { askToFixEmail(result.error); return; }
+      if (result && result.code === 'already-booked') { showAlreadyBooked(result); return; }
       showBookingFailure();
       return;
     }

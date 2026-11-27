@@ -628,6 +628,32 @@ app.post('/api/submit-lead', async (req, res) => {
     let existing = null;
     try { existing = await lcal.findBookingAt(email, startDt.getTime()); } catch (e) { /* carry on: Cal.com decides */ }
 
+    // One upcoming call per person (Notion, 27 Nov): the same email or the same WhatsApp number already has an
+    // upcoming call -> no new booking, no email, no reminders; they see their call instead. If Cal.com can't be
+    // checked, they book as normal (this check never blocks on its own failure).
+    if (!existing) {
+      let dup = null;
+      try { dup = await lcal.upcomingForPerson(email, whatsapp_number); } catch (e) { console.warn('⚠️ [Upcoming call check]:', logsafe.safe(e.message)); }
+      if (dup) {
+        const d = ltime.describe(new Date(dup.start), bookingZone);
+        const when = `${d.dayShort} at ${d.time} ${d.zone}`;
+        // Only the person whose email it is sees the time and the link (the link can move or cancel the call)
+        const showDetails = dup.by === 'email';
+        console.log(`📅 [Booking]: already has an upcoming call (matched by ${dup.by}), no new booking`);
+        if (leadEventId) { try { await lleads.markBooked(leadEventId, email); } catch (e) { /* only stops nudges */ } }
+        if (nudgeRec) await lstore.update('nudge:' + resumeCode, { booked: true }).catch(() => {});
+        lafter.after(() => lalerts.send('Tried to book again',
+          `${name || 'Someone'} tried to book another call but already has one on ${when} (same ${dup.by}). No new booking was made.\n\n${detailsText}`,
+          `dup:${String(email).toLowerCase()}:${pickedTime}`, { backup: false }));
+        return res.status(409).json({
+          success: false, ok: false, code: 'already-booked',
+          error: showDetails ? `You already have a call booked for ${when}.` : 'You already have a call booked with us.',
+          existing: showDetails ? { when, rescheduleUrl: dup.uid ? `https://cal.com/reschedule/${encodeURIComponent(dup.uid)}` : '' } : null,
+          whatsappNumber: config.WHATSAPP_NUMBER
+        });
+      }
+    }
+
     if (existing) {
       calAccepted = true;
       bookingUid = existing.uid;

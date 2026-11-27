@@ -1430,6 +1430,29 @@ html.hero-zoomed .cta-box .btn-primary { min-width: 340px; min-height: 60px; fon
   display: block;
 }
 
+/* One upcoming call per person: shown instead of the times */
+.already-booked {
+  padding: 1.25rem;
+  border-radius: 12px;
+  background: rgba(11, 66, 42, 0.06);
+  text-align: center;
+}
+
+.already-booked-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.already-booked-note {
+  margin: 0 0 1rem;
+}
+
+.already-booked-btn {
+  display: inline-flex;
+  text-decoration: none;
+}
+
 /* "Did you mean …?" under the email field */
 .email-hint {
   margin-top: 0.5rem;
