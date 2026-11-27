@@ -120,7 +120,7 @@ global.fetch = async (url, opts) => {
     if (calMode === 'refuse-limit' || calMode === 'refuse-limit-found') {
       // Cal.com's own 1-booking limit (its reason names the email); "found": a booking made a moment ago (two tabs)
       if (calMode === 'refuse-limit-found') { const em = JSON.parse(opts.body).responses.email; calByEmail[em] = [{ uid: 'bk-race', createdAt: new Date().toISOString(), start: new Date(Date.now() + 86400000).toISOString(), status: 'accepted' }]; }
-      return json({ status: 'error', error: { code: 'BadRequestException', message: 'booker_limit_exceeded_error', details: { message: "Attendee with this email can't book because the maximum number of active bookings has been reached." } } }, 400);
+      return json({ status: 'error', error: { code: 'BadRequestException', message: "Attendee with this email can't book because the maximum number of active bookings has been reached.", details: { message: "Attendee with this email can't book because the maximum number of active bookings has been reached.", error: 'Bad Request', statusCode: 400 } } }, 400); // Cal.com API v2's exact reply (its source, errors.service.ts)
     }
     if (calMode === 'refuse-email') return json({ status: 'error', error: { code: 'BadRequestException', message: 'Attendee email domain cannot receive emails' } }, 400);
     const b = JSON.parse(opts.body);
