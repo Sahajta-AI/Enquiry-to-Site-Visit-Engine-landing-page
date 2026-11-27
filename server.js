@@ -164,7 +164,7 @@ function getLatestConfig() {
 // No Cal.com booking link: bookings come only through our form.
 app.get('/api/config', async (req, res) => {
   const config = getLatestConfig();
-  const calBookingPage = await lcal.bookingPagePath().catch(() => '');
+  const calBookingPage = await lcal.bookingPagePath({ maxWaitMs: 1000 }).catch(() => ''); // never holds the page up
   res.json({
     calBookingPage,
     metaPixelId: lcfg.pixelId(),

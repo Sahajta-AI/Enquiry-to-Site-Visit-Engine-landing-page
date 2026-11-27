@@ -44,6 +44,27 @@
     })();
   </script>
 
+  <!-- Meta Pixel at once (Notion URGENT, 27 Nov: landing page views were lost while the Pixel waited for sv-core.js and
+       /api/config). The live Pixel only on warmchain.sahajta.com, the Sandbox Pixel anywhere else (previews, local).
+       One PageView here; sv-core.js sees window.svPixel and never loads the Pixel or sends PageView again. -->
+  <script>
+    (function () {
+      try {
+        var live = window.location.hostname === 'warmchain.sahajta.com';
+        var id = live ? '909588332098654' : '2385483675575249';
+        !function (f, b, e, v, n, t, s) {
+          if (f.fbq) return; n = f.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments); };
+          if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0'; n.queue = []; t = b.createElement(e); t.async = !0;
+          t.src = v; s = b.getElementsByTagName(e)[0]; s.parentNode.insertBefore(t, s);
+        }(window, document, 'script', 'https://connect.facebook.net/en_US/fbevents.js');
+        window.fbq('set', 'autoConfig', false, id);
+        window.fbq('init', id);
+        window.fbq('track', 'PageView'); // one PageView per page load
+        window.svPixel = { id: id, kind: live ? 'live' : 'sandbox' };
+      } catch (e) {}
+    })();
+  </script>
+
   <!-- Hero zoom: the hero is laid out for a 1470x800 laptop screen (the boss's Mac) and zoomed as one piece to fit
        this screen, so every laptop sees the same look. Set here, before the first paint; app.js (fitHero) re-runs it on resize. -->
   <script>
@@ -63,7 +84,7 @@
     })();
   </script>
 
-  <!-- The Meta Pixel and Clarity load from /js/sv-core.js once /api/config replies: the ID comes from the server, never from this page -->
+  <!-- Clarity loads from /js/sv-core.js once /api/config replies; the Meta Pixel is above -->
 </head>
 <body>
 
@@ -485,7 +506,7 @@
     </div>
   </div>
 
-  <script src="/js/sv-core.js?v=1.0.1" defer></script>
+  <script src="/js/sv-core.js?v=1.0.2" defer></script>
   <script src="/js/app.js?v=2.10.3" defer></script>
 </body>
 </html>

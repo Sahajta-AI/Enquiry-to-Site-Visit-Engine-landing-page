@@ -1,7 +1,7 @@
 /**
  * Tracking for every page (Backend and Tracking Brief, parts 5, 6 and 8).
- *  - Loads ONE Pixel, after /api/config replies: the live Pixel on production, the Sandbox Pixel on previews.
- *    The ID always comes from the server. Never hard-coded here.
+ *  - The Meta Pixel is loaded by the page's <head> at once (window.svPixel, 27 Nov). Only if that didn't happen does
+ *    this load ONE Pixel after /api/config replies (the ID from the server), so there is always one PageView, never two.
  *  - One small helper for every tracking call. It does nothing when the Pixel isn't loaded (an ad blocker), so the page never breaks.
  *  - Saves where the visitor came from (sv_attrib, 30 days).
  *  - Microsoft Clarity, only when the server says NEW_TRACKING is on and a Clarity ID is set.
@@ -14,7 +14,8 @@
   var THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
   var memoryAttrib = null; // localStorage can fail (private windows): keep the values in memory for the visit
   var cfg = null;
-  var pixelLoaded = false;
+  // Loaded by the page's <head>: never again here
+  var pixelLoaded = !!(window.svPixel && window.svPixel.id && typeof window.fbq === 'function');
   var waiting = [];
 
   // ---------- Where the visitor came from ----------

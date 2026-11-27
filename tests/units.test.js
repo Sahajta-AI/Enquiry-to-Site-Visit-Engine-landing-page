@@ -314,6 +314,35 @@ test('reschedule pop-up: the booking page path comes from CAL_BOOKING_PAGE (a fu
   }
 });
 
+test('27 Nov /api/config never waits long for Cal.com: a slow Cal.com -> \'\' after maxWaitMs; once known, the path comes at once', async () => {
+  const cal = require('../lib/cal');
+  const saved = { page: process.env.CAL_BOOKING_PAGE, key: process.env.CAL_API_KEY, fetch: global.fetch };
+  let calls = 0, slow = true;
+  try {
+    delete process.env.CAL_BOOKING_PAGE;
+    process.env.CAL_API_KEY = process.env.CAL_API_KEY || 'test-key';
+    global.fetch = async (url) => {
+      if (!String(url).includes('/v2/event-types/')) return saved.fetch(url);
+      calls++;
+      if (slow) await new Promise(r => setTimeout(r, 400));
+      return { ok: true, json: async () => ({ data: { bookingUrl: 'https://cal.com/shubhang-sethi/enquiry-to-site-visit-engine' } }) };
+    };
+    const t0 = Date.now();
+    assert.strictEqual(await cal.bookingPagePath({ maxWaitMs: 100 }), '');
+    assert.ok(Date.now() - t0 < 300, 'did not wait for Cal.com');
+    await new Promise(r => setTimeout(r, 450)); // the lookup finishes in the background
+    slow = false;
+    const t1 = Date.now();
+    assert.strictEqual(await cal.bookingPagePath({ maxWaitMs: 100 }), 'shubhang-sethi/enquiry-to-site-visit-engine');
+    assert.ok(Date.now() - t1 < 50, 'saved: at once');
+    assert.strictEqual(calls, 1, 'no second lookup while the saved one is fresh');
+  } finally {
+    global.fetch = saved.fetch;
+    if (saved.page === undefined) delete process.env.CAL_BOOKING_PAGE; else process.env.CAL_BOOKING_PAGE = saved.page;
+    if (saved.key === undefined) delete process.env.CAL_API_KEY; else process.env.CAL_API_KEY = saved.key;
+  }
+});
+
 test('store counter: on Upstash the count and its expiry are set in one step (an address can never stay blocked)', async () => {
   const store = require('../lib/store');
   const saved = { url: process.env.UPSTASH_REDIS_REST_URL, token: process.env.UPSTASH_REDIS_REST_TOKEN, fetch: global.fetch };
