@@ -117,6 +117,11 @@ global.fetch = async (url, opts) => {
   }
   if (url === 'https://api.cal.com/v2/bookings' && opts.method === 'POST') {
     if (calMode === 'refuse') return json({ error: 'slot taken' }, 400);
+    if (calMode === 'refuse-limit' || calMode === 'refuse-limit-found') {
+      // Cal.com's own 1-booking limit (its reason names the email); "found": a booking made a moment ago (two tabs)
+      if (calMode === 'refuse-limit-found') { const em = JSON.parse(opts.body).responses.email; calByEmail[em] = [{ uid: 'bk-race', createdAt: new Date().toISOString(), start: new Date(Date.now() + 86400000).toISOString(), status: 'accepted' }]; }
+      return json({ status: 'error', error: { code: 'BadRequestException', message: 'booker_limit_exceeded_error', details: { message: "Attendee with this email can't book because the maximum number of active bookings has been reached." } } }, 400);
+    }
     if (calMode === 'refuse-email') return json({ status: 'error', error: { code: 'BadRequestException', message: 'Attendee email domain cannot receive emails' } }, 400);
     const b = JSON.parse(opts.body);
     calBookingPosts.push(b);
@@ -1213,6 +1218,28 @@ test('27 Nov one upcoming call per person: a booking from a nudge link with an u
   assert.strictEqual(calBookingPosts.length, 0);
   const n = await store.get('nudge:' + code);
   assert.ok(n.booked && !n.used, 'nudges stop; the link still opens');
+});
+
+test('27 Nov Cal.com\'s own 1-booking limit refuses: "You already have a call booked", never "check your email"; the call shown when it can be found', async () => {
+  reset();
+  calMode = 'refuse-limit';
+  const r = await post('/api/submit-lead', bookingBody({ email: 'limit@skyline.in', name: 'Limit Person', whatsapp_number: '9811110006' }));
+  assert.strictEqual(r.status, 409);
+  const body = await r.json();
+  assert.strictEqual(body.code, 'already-booked');
+  assert.strictEqual(body.error, 'You already have a call booked with us.');
+  assert.strictEqual(body.existing, null);
+  assert.ok(await waitFor(() => sent.some(e => e.subject === 'Tried to book again' && /Limit Person/.test(e.text))));
+  assert.match(sent.find(e => e.subject === 'Tried to book again').text, /\(Cal\.com’s 1-booking limit\)/);
+  assert.ok(!sent.some(e => e.subject === 'A booking could not be made'));
+
+  reset();
+  calMode = 'refuse-limit-found';
+  const r2 = await post('/api/submit-lead', bookingBody({ email: 'race@skyline.in', whatsapp_number: '9811110007' }));
+  assert.strictEqual(r2.status, 409);
+  const b2 = await r2.json();
+  assert.match(b2.error, /^You already have a call booked for /);
+  assert.strictEqual(b2.existing.rescheduleUrl, 'https://cal.com/reschedule/bk-race');
 });
 
 test('4 no Cal.com key: the booking fails with the normal error, never a fake "booked", and Shubhang gets the details', async () => {

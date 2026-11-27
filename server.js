@@ -623,6 +623,29 @@ app.post('/api/submit-lead', async (req, res) => {
   }
 
   let calRefusal = '';
+  // They already have an upcoming call: no new booking, no email, no reminders; they see their call instead.
+  // dup: { uid, start, by: 'email' | 'phone' } or null when only Cal.com knows (its own 1-booking limit)
+  const alreadyBooked = async (dup) => {
+    let when = '';
+    if (dup && dup.start) {
+      const d = ltime.describe(new Date(dup.start), bookingZone);
+      when = `${d.dayShort} at ${d.time} ${d.zone}`;
+    }
+    // Only the person whose email it is sees the time and the link (the link can move or cancel the call)
+    const showDetails = !!(dup && dup.by === 'email' && when);
+    console.log(`📅 [Booking]: already has an upcoming call (matched by ${dup ? dup.by : 'Cal.com limit'}), no new booking`);
+    if (leadEventId) { try { await lleads.markBooked(leadEventId, email); } catch (e) { /* only stops nudges */ } }
+    if (nudgeRec) await lstore.update('nudge:' + resumeCode, { booked: true }).catch(() => {});
+    lafter.after(() => lalerts.send('Tried to book again',
+      `${name || 'Someone'} tried to book another call but already has one${when ? ` on ${when}` : ''} (${dup ? 'same ' + dup.by : 'Cal.com’s 1-booking limit'}). No new booking was made.\n\n${detailsText}`,
+      `dup:${String(email).toLowerCase()}:${pickedTime}`, { backup: false }));
+    return res.status(409).json({
+      success: false, ok: false, code: 'already-booked',
+      error: showDetails ? `You already have a call booked for ${when}.` : 'You already have a call booked with us.',
+      existing: showDetails ? { when, rescheduleUrl: dup.uid ? `https://cal.com/reschedule/${encodeURIComponent(dup.uid)}` : '' } : null,
+      whatsappNumber: config.WHATSAPP_NUMBER
+    });
+  };
   {
     // A retry after a timeout, with the same email and the same time, must not book twice: reply with the booking that exists
     let existing = null;
@@ -634,24 +657,7 @@ app.post('/api/submit-lead', async (req, res) => {
     if (!existing) {
       let dup = null;
       try { dup = await lcal.upcomingForPerson(email, whatsapp_number); } catch (e) { console.warn('⚠️ [Upcoming call check]:', logsafe.safe(e.message)); }
-      if (dup) {
-        const d = ltime.describe(new Date(dup.start), bookingZone);
-        const when = `${d.dayShort} at ${d.time} ${d.zone}`;
-        // Only the person whose email it is sees the time and the link (the link can move or cancel the call)
-        const showDetails = dup.by === 'email';
-        console.log(`📅 [Booking]: already has an upcoming call (matched by ${dup.by}), no new booking`);
-        if (leadEventId) { try { await lleads.markBooked(leadEventId, email); } catch (e) { /* only stops nudges */ } }
-        if (nudgeRec) await lstore.update('nudge:' + resumeCode, { booked: true }).catch(() => {});
-        lafter.after(() => lalerts.send('Tried to book again',
-          `${name || 'Someone'} tried to book another call but already has one on ${when} (same ${dup.by}). No new booking was made.\n\n${detailsText}`,
-          `dup:${String(email).toLowerCase()}:${pickedTime}`, { backup: false }));
-        return res.status(409).json({
-          success: false, ok: false, code: 'already-booked',
-          error: showDetails ? `You already have a call booked for ${when}.` : 'You already have a call booked with us.',
-          existing: showDetails ? { when, rescheduleUrl: dup.uid ? `https://cal.com/reschedule/${encodeURIComponent(dup.uid)}` : '' } : null,
-          whatsappNumber: config.WHATSAPP_NUMBER
-        });
-      }
+      if (dup) return alreadyBooked(dup);
     }
 
     if (existing) {
@@ -716,6 +722,13 @@ app.post('/api/submit-lead', async (req, res) => {
     // A booking that Cal.com refused or that timed out is a failed booking: tell the page, send nothing, create nothing.
     // One alert per person (per email and time picked), never merged.
     if (!calAccepted) {
+      // Refused by Cal.com's own "1 upcoming booking per person" limit (its reason names the email, so it is
+      // checked before the email refusal): they see their call, never "check your email"
+      if (!timedOut && /booker_limit|active bookings|maximum number of (active )?bookings/i.test(calRefusal)) {
+        let dup = null;
+        try { dup = await lcal.upcomingForPerson(email, null); } catch (e) { /* the generic message */ }
+        return alreadyBooked(dup);
+      }
       // Refused because of the email (Cal.com's deliverability check): the page asks them to fix it, time kept
       const emailRefused = !nudgeRec && /email/i.test(calRefusal) && !timedOut;
       lafter.after(() => lalerts.send('A booking could not be made',

@@ -1168,6 +1168,17 @@ test('V2 Odoo 11: a cancelled call: one note (by them / by you, reason when give
   const c2 = notes.filter(x => x.body.startsWith('Call cancelled'));
   assert.deepStrictEqual(c2[0].body.split('<br>').slice(1), ['Cancelled by: you'], 'no Reason line when none was given');
   assert.deepStrictEqual(titlesOf(leads[0].id), ['WhatsApp: get the call rebooked'], 'also when Shubhang cancelled');
+
+  // Cal.com left "cancelled by" blank (27 Nov: every cancellation, even Shubhang's): never a guess
+  v2on();
+  const b3 = leadBody({ whatsapp_number: '9802020202' });
+  await sendLead(b3);
+  await bookV2('bk-v3f', b3.email, inDays(3, 10).toISOString());
+  await hook('BOOKING_CANCELLED', 'bk-v3f', b3.email, inDays(3, 10).toISOString(), { cancelledBy: '', cancellationReason: 'Not a fit', organizer: { email: 'shubhang@sahajta.com' } });
+  await settle();
+  const c3 = notes.filter(x => x.body.startsWith('Call cancelled'));
+  assert.deepStrictEqual(c3[0].body.split('<br>').slice(1), ['Cancelled by: not recorded by Cal.com', 'Reason: Not a fit']);
+  assert.match(openActs(leads[0].id)[0].note, /^<p>The call was cancelled\. WhatsApp them/);
 });
 
 test('V2 Odoo 6: emails Gmail accepted go into the lead\'s log once ("Email sent: …", a blank line, the full text); not for a lead without the tag; nothing with V2 off', async () => {
