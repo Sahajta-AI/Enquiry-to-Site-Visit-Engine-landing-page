@@ -429,21 +429,41 @@
     return dp.weekday.slice(0, 3) + ', ' + dp.day + ' ' + dp.month.slice(0, 3) + ' at ' + formatTime(slotTime) + ' ' + zoneLabel(booking.timezone);
   }
 
+  // Open times for the picker, like the booking form (Shubhang, 27 Nov): loaded again after 2 minutes, and on every
+  // draw only the times that can still be booked (a time earlier than now + Cal.com's notice has gone since loading;
+  // the server's clock is used). The current time is not offered as a "new" time.
+  var RS_MAX_AGE = 2 * 60 * 1000;
   function rsMonth(year, month) {
     var key = year + '-' + pad2(month + 1);
-    if (RS.cache[key]) return Promise.resolve(RS.cache[key]);
-    return fetch('/api/available-slots?month=' + key + '&timeZone=' + encodeURIComponent(booking.timezone || 'Asia/Kolkata'))
-      .then(function (r) { if (!r.ok) throw new Error('slots'); return r.json(); })
-      .then(function (d) {
-        // The current time is not offered as a "new" time
-        var data = { availableDates: [], slotsByDate: {} };
-        (d.availableDates || []).forEach(function (day) {
-          var times = (d.slotsByDate[day] || []).filter(function (tm) { return !(day === booking.slotDate && tm === booking.slotTime); });
-          if (times.length) { data.availableDates.push(day); data.slotsByDate[day] = times; }
-        });
-        RS.cache[key] = data;
-        return data;
+    var hit = RS.cache[key];
+    var load = hit && Date.now() - hit.fetchedAt < RS_MAX_AGE ? Promise.resolve(hit)
+      : (function () {
+        var asked = Date.now();
+        return fetch('/api/available-slots?month=' + key + '&timeZone=' + encodeURIComponent(booking.timezone || 'Asia/Kolkata'))
+          .then(function (r) { if (!r.ok) throw new Error('slots'); return r.json(); })
+          .then(function (d) {
+            d.fetchedAt = Date.now();
+            d.clockOffset = isFinite(d.serverNow) ? d.serverNow - Math.round((asked + Date.now()) / 2) : 0;
+            RS.cache[key] = d;
+            return d;
+          });
+      })();
+    return load.then(rsLive);
+  }
+
+  function rsLive(d) {
+    var cutoff = isFinite(d.noticeMinutes) && d.startsByDate ? Date.now() + (d.clockOffset || 0) + d.noticeMinutes * 60000 : -Infinity;
+    var data = { availableDates: [], slotsByDate: {} };
+    (d.availableDates || []).forEach(function (day) {
+      var starts = (d.startsByDate && d.startsByDate[day]) || [];
+      var times = (d.slotsByDate[day] || []).filter(function (tm, i) {
+        if (day === booking.slotDate && tm === booking.slotTime) return false;
+        var at = new Date(starts[i]).getTime();
+        return !isFinite(at) || at >= cutoff;
       });
+      if (times.length) { data.availableDates.push(day); data.slotsByDate[day] = times; }
+    });
+    return data;
   }
 
   function rsRender() {
