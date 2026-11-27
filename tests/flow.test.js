@@ -123,6 +123,7 @@ global.fetch = async (url, opts) => {
       if (calMode === 'refuse-limit-found') { const em = JSON.parse(opts.body).responses.email; calByEmail[em] = [{ uid: 'bk-race', createdAt: new Date().toISOString(), start: new Date(Date.now() + 86400000).toISOString(), status: 'accepted' }]; }
       return json({ status: 'error', error: { code: 'BadRequestException', message: "Attendee with this email can't book because the maximum number of active bookings has been reached.", details: { message: "Attendee with this email can't book because the maximum number of active bookings has been reached.", error: 'Bad Request', statusCode: 400 } } }, 400); // Cal.com API v2's exact reply (its source, errors.service.ts)
     }
+    if (calMode === 'refuse-contact') return json({ status: 'error', error: { code: 'BadRequestException', message: 'Attendee email or phone number properties wrong. They must have at least one contact method (email or phone number).' } }, 400);
     if (calMode === 'refuse-email') return json({ status: 'error', error: { code: 'BadRequestException', message: 'Attendee email domain cannot receive emails' } }, 400);
     const b = JSON.parse(opts.body);
     calBookingPosts.push(b);
@@ -1153,6 +1154,27 @@ test('26 Nov Cal.com refuses because of the email: asked to fix it (time kept), 
   assert.strictEqual((await r2.json()).code, 'booking');
   assert.ok(await waitFor(() => sent.some(e => /Taken Person/.test(e.text))));
   assert.match(sent.find(e => /Taken Person/.test(e.text)).text, /Cal\.com said: status 400: slot taken[\s\S]*Please reach out to this person\./);
+});
+
+test('26 Nov "check your email" only for Cal.com\'s real email refusal: another refusal that names the email gets the normal "pick a time again", with Cal.com\'s reason in the alert', async () => {
+  reset();
+  calMode = 'refuse-contact';
+  const r = await post('/api/submit-lead', bookingBody({ email: 'contact@skyline.in', name: 'Contact Person' }));
+  assert.strictEqual(r.status, 502);
+  assert.strictEqual((await r.json()).code, 'booking', 'not "check your email"');
+  assert.ok(await waitFor(() => sent.some(e => e.subject === 'A booking could not be made' && /Contact Person/.test(e.text))));
+  const mail = sent.find(e => /Contact Person/.test(e.text)).text;
+  assert.match(mail, /Cal\.com said: status 400: Attendee email or phone number properties wrong/);
+  assert.match(mail, /Please reach out to this person\./);
+
+  const is = app._isEmailRefusal;
+  for (const yes of ['status 400: Attendee email domain cannot receive emails', 'status 400: Email is not deliverable', 'status 400: Invalid email address',
+    'status 400: The email address is not valid', 'status 400: Email domain does not exist', "status 400: email domain doesn't exist", 'status 400: No MX record for email domain', 'status 400: Please enter a valid email'])
+    assert.strictEqual(is(yes), true, yes);
+  for (const no of ['status 400: Attendee email or phone number properties wrong. They must have at least one contact method (email or phone number).',
+    "status 400: Attendee with this email can't book because the maximum number of active bookings has been reached.",
+    'status 400: slot taken', 'status 409: Booking already exists', 'status 400: Invalid time slot', 'status 500: Internal server error', '', 'status 400: email'])
+    assert.strictEqual(is(no), false, no);
 });
 
 test('27 Nov one upcoming call per person: the same email -> no new booking, their call and reschedule link shown, one alert, nudges stopped', async () => {

@@ -480,6 +480,17 @@ app.get('/api/available-slots', async (req, res) => {
   }
 });
 
+// Cal.com refused because the email can't take mail (Notion "Check your email shows only for Cal.com's real email
+// refusal", 26 Nov). Its exact wording isn't public, so: the reason names the email AND a delivery problem, and is not one
+// of Cal.com's other refusals that also mention the email (the 1-booking limit, "at least one contact method").
+// Anything else gets the normal "pick a time again"; the alert always carries Cal.com's own reason.
+function isEmailRefusal(reason) {
+  const r = String(reason || '');
+  if (!/e-?mail/i.test(r)) return false;
+  if (/active bookings|booker_limit|contact method|already/i.test(r)) return false;
+  return /deliver|receiv|domain|invalid|not valid|valid e-?mail|does ?n[o']t exist|not exist|\bmx\b|bounce|undeliverable/i.test(r);
+}
+
 // Turns a wall-clock date and time in a named time zone into the real moment (UTC).
 // The picker shows times in the visitor's zone, so the booking has to be made in that same zone.
 function isValidTimeZone(tz) {
@@ -738,7 +749,7 @@ app.post('/api/submit-lead', async (req, res) => {
         return alreadyBooked(dup);
       }
       // Refused because of the email (Cal.com's deliverability check): the page asks them to fix it, time kept
-      const emailRefused = !nudgeRec && /email/i.test(calRefusal) && !timedOut;
+      const emailRefused = !nudgeRec && !timedOut && isEmailRefusal(calRefusal);
       lafter.after(() => lalerts.send('A booking could not be made',
         `Cal.com ${timedOut ? 'did not answer in time' : 'refused'} a booking.${calRefusal ? ` Cal.com said: ${calRefusal}.` : ''}` +
         (emailRefused ? ' They were asked to fix their email and book again; if they don’t, WhatsApp them.' : ' Please reach out to this person.') +
@@ -804,3 +815,4 @@ if (require.main === module) {
 }
 
 module.exports = app;
+module.exports._isEmailRefusal = isEmailRefusal; // tests
