@@ -1342,6 +1342,45 @@ test('V2 bounce (26 Nov, Sindhuja): the 10-minute check after the booking email 
   assert.deepStrictEqual(sent.slice(before).map(e => e.subject), ['An email to a lead bounced'], 'one alert, no second email');
 });
 
+test('V2 late bounce (Notion, 26 Nov): no bounce at 10 minutes -> the thread is read again at 4 h and 24 h (queued once); a bounce arriving later is caught then, once', async () => {
+  v2on();
+  const email = 'late' + (++n) + '@gmail.example.com';
+  const callAt = inDays(3, 10);
+  leads.push({ id: 121, name: '[TEST] Late Co – Warm-Chain System', active: true, stage_id: 3, email_from: email, [SVC]: [WC], partner_id: 996 });
+  const uid = 'bk-late-' + n;
+  await store.set('booking:' + uid, { uid, name: 'Late Person', email, tz: 'Asia/Kolkata', startISO: callAt.toISOString(), first: { sentAt: Date.now(), gmailId: 'm97', threadId: 't97' } });
+  await store.set('task:first:' + uid, { status: 'sent' });
+  threadsFake.t97 = [{ id: 'm97' }, Object.assign({ id: 'm98' }, BOUNCE, { subject: 'Delivery Status Notification (Delay)' })];
+  const q0 = queued.length;
+  assert.strictEqual(await tasksMod.runCheck('first', uid), 'ok', 'a "(Delay)" notice is not a bounce');
+  const jobs = await Promise.all(queued.slice(q0).map(id => store.get('job:' + id)));
+  assert.deepStrictEqual(jobs.map(j => j.kind), ['bounce-check', 'bounce-check']);
+  assert.deepStrictEqual(jobs.map(j => Math.round((j.runAt - Date.now()) / 60000 / 10) * 10), [230, 1430], 'about 4 h and 24 h after the email');
+  assert.strictEqual(await tasksMod.runCheck('first', uid), 'ok');
+  assert.strictEqual(queued.length - q0, 2, 'queued once, even when the 10-minute check runs twice');
+
+  const before = sent.length;
+  assert.strictEqual(await tasksMod.runJob(jobs[0]), 'ok', 'still nothing at 4 h');
+  threadsFake.t97.push(Object.assign({ id: 'm99' }, BOUNCE)); // the real failure, hours later
+  assert.strictEqual(await tasksMod.runJob(jobs[1]), 'bounced');
+  await settle();
+  assert.strictEqual(notes.filter(x => x.id === 121 && /^Email bounced: our booking email to /.test(x.body)).length, 1);
+  assert.strictEqual(openActs(121).filter(x => x.summary === 'WhatsApp: email bounced, ask for the right email').length, 1);
+  assert.strictEqual(await tasksMod.runJob(jobs[1]), 'known', 'once per address');
+  assert.deepStrictEqual(sent.slice(before).map(e => e.subject), ['An email to a lead bounced']);
+  calBookings[uid] = { status: 'accepted', start: callAt.toISOString() };
+  assert.strictEqual(await tasksMod.HANDLERS.second(uid), 'stopped:bounced', 'no more emails after it');
+
+  // A bounce already caught at 10 minutes: nothing more is queued
+  const uid2 = 'bk-late2-' + n;
+  await store.set('booking:' + uid2, { uid: uid2, name: 'X', email: 'x' + n + '@gmail.example.com', tz: 'Asia/Kolkata', startISO: callAt.toISOString(), first: { sentAt: Date.now(), gmailId: 'm91', threadId: 't91' } });
+  await store.set('task:first:' + uid2, { status: 'sent' });
+  threadsFake.t91 = [{ id: 'm91' }, Object.assign({ id: 'm92' }, BOUNCE)];
+  const q1 = queued.length;
+  assert.strictEqual(await tasksMod.runCheck('first', uid2), 'bounced');
+  assert.strictEqual(queued.length, q1);
+});
+
 test('bounce: a "(Delay)" notice is not a bounce, and a real reply next to nothing else is still a reply', async () => {
   const gm = require(path.join(tmp, 'lib', 'gmail.js'));
   assert.strictEqual(gm.isBounce(BOUNCE), true);

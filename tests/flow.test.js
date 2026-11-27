@@ -451,7 +451,8 @@ test('8.2: the second email goes under the first, in the same thread, with Re:',
   reset();
   await sendWebhook(webhookBody());
   const results = await runQueue();
-  assert.deepStrictEqual(results.sort(), ['ok', 'ok', 'sent']); // 10-minute checks (nothing to alert) and the second email
+  // 10-minute checks (nothing to alert), the late bounce checks at 4 h and 24 h after each email, and the second email
+  assert.deepStrictEqual(results.sort(), ['ok', 'ok', 'ok', 'ok', 'ok', 'ok', 'sent']);
   assert.strictEqual(sent.length, 2);
   const [first, second] = sent;
   assert.strictEqual(second.subject, 'Re: ' + first.subject);
