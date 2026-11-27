@@ -14,6 +14,7 @@ fs.copyFileSync(path.join(root, 'server.js'), path.join(tmp, 'server.js'));
 fs.symlinkSync(path.join(root, 'node_modules'), path.join(tmp, 'node_modules'));
 fs.mkdirSync(path.join(tmp, 'public'));
 fs.copyFileSync(path.join(root, 'public', 'tracking-test.html'), path.join(tmp, 'public', 'tracking-test.html'));
+fs.copyFileSync(path.join(root, 'public', 'open-times.html'), path.join(tmp, 'public', 'open-times.html'));
 
 Object.assign(process.env, {
   NODE_ENV: 'test', SITE_URL: 'https://preview.example.test', CAL_EVENT_TYPE_ID: '7785231',
@@ -1373,6 +1374,25 @@ test('4 Origin: the live address, the boss\'s address and preview addresses are 
   for (const origin of ['https://evil.example', 'https://warmchain.sahajta.com.evil.example']) {
     assert.strictEqual((await post('/api/lead', lead(), { Origin: origin })).status, 403, origin);
     assert.strictEqual((await post('/api/submit-lead', bookingBody(), { Origin: origin })).status, 403, origin);
+  }
+});
+
+test('27 Nov Shubhang\'s Open times page: hidden (noindex, no link, not in robots.txt), no Pixel or Clarity, read-only on the form\'s open-times call in IST', async () => {
+  for (const u of ['/open-times', '/open-times.html']) {
+    const r = await realFetch(base + u);
+    assert.strictEqual(r.status, 200, u);
+    assert.strictEqual(r.headers.get('x-robots-tag'), 'noindex', u);
+  }
+  const html = await (await realFetch(base + '/open-times')).text();
+  assert.match(html, /<meta name="robots" content="noindex, nofollow">/);
+  assert.ok(!/fbq|fbevents|clarity|sv-core|app\.js/.test(html), 'no Pixel, no Clarity, no form code');
+  assert.ok(!/submit-lead|\/api\/lead|method:\s*'POST'/.test(html), 'nothing is sent, only read');
+  assert.match(html, /\/api\/available-slots\?month=/);
+  assert.match(html, /Asia\/Kolkata/);
+  assert.doesNotThrow(() => new Function(html.split('<script>')[1].split('</script>')[0]), 'its script parses');
+  assert.ok(!/open-times/.test(fs.readFileSync(path.join(root, 'public', 'robots.txt'), 'utf8')));
+  for (const f of fs.readdirSync(path.join(root, 'public')).filter(f => f.endsWith('.html') && f !== 'open-times.html')) {
+    assert.ok(!/open-times/.test(fs.readFileSync(path.join(root, 'public', f), 'utf8')), f + ' does not link to it');
   }
 });
 

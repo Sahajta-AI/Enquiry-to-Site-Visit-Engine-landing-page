@@ -46,7 +46,7 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf.toString('utf8'); } }));
 app.use(express.urlencoded({ extended: true }));
 app.use((req, res, next) => {
-  if (/^\/tracking-test(\.html)?$/.test(req.path)) res.setHeader('X-Robots-Tag', 'noindex');
+  if (/^\/(tracking-test|open-times)(\.html)?$/.test(req.path)) res.setHeader('X-Robots-Tag', 'noindex');
   next();
 });
 // One plain log line per /api request: the endpoint, the status, the result or error code, the timing.
@@ -118,6 +118,14 @@ app.post('/api/tracking-test', async (req, res) => {
     console.error('⚠️ [/api/tracking-test]:', logsafe.safe(err.message));
     res.status(500).json({ ok: false });
   }
+});
+
+// Shubhang's private "Open times" page (Notion, 26 Nov): read-only, the same open times as the booking form, in IST.
+// No link to it anywhere, noindex, not in robots.txt; no Pixel or Clarity on it.
+app.get('/open-times', (req, res) => {
+  res.setHeader('X-Robots-Tag', 'noindex');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile(path.join(__dirname, 'public', 'open-times.html'));
 });
 
 // The page that opens right after a successful booking (also the pre-call page when opened directly)

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en-IN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Open times | Sahajta AI</title>
+  <!-- Private page for Shubhang (Notion "Private Open times page", 26 Nov): no link to it anywhere, noindex, not in robots.txt.
+       Read-only: the same /api/available-slots call the booking form makes, in IST. No Meta Pixel, no Clarity, no booking. -->
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <style>
+    :root { --green: #0B422A; --green-tint: rgba(11, 66, 42, 0.07); --cream: #FDFCF0; --gold: #D9B75B; --ink: #121212; --mute: #5B615C; --line: rgba(18, 18, 18, 0.12); --error: #B3261E; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--cream); color: var(--ink); font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+    h1 { font-size: 1.5rem; margin: 0 0 4px; }
+    .muted { color: var(--mute); font-size: 0.9rem; margin: 4px 0; }
+    .bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 20px 0 12px; }
+    .bar h2 { font-size: 1.15rem; margin: 0; text-align: center; flex: 1; }
+    button { font: inherit; min-height: 44px; min-width: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+    button:disabled { opacity: .35; cursor: not-allowed; }
+    button.primary { background: var(--green); border-color: var(--green); color: #fff; font-weight: 600; }
+    .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+    .dow { font-size: 0.75rem; color: var(--mute); text-align: center; padding: 4px 0; font-weight: 600; }
+    .cell { min-height: 62px; border-radius: 10px; border: 1px solid transparent; padding: 6px 4px; text-align: center; font-size: 0.95rem; color: #A3A39C; background: transparent; }
+    .cell .n { display: block; font-size: 0.72rem; margin-top: 4px; }
+    button.cell { border-color: var(--line); background: #fff; color: var(--ink); font-weight: 600; width: 100%; }
+    button.cell .n { color: var(--green); font-weight: 500; }
+    button.cell.today { border-color: var(--gold); }
+    button.cell.sel { background: var(--green); border-color: var(--green); color: #fff; }
+    button.cell.sel .n { color: #fff; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-top: 16px; }
+    .card h3 { margin: 0 0 10px; font-size: 1.05rem; }
+    .label { font-size: 0.8rem; color: var(--mute); font-weight: 600; margin: 12px 0 6px; }
+    .times { display: flex; flex-wrap: wrap; gap: 6px; }
+    .t { padding: 8px 10px; border-radius: 8px; background: var(--green-tint); color: var(--green); font-weight: 600; font-size: 0.9rem; }
+    .msg { padding: 16px; text-align: center; color: var(--mute); }
+    .msg.err { color: var(--error); }
+    .foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+    [hidden] { display: none !important; }
+    @media (max-width: 420px) { .cell { min-height: 54px; font-size: 0.88rem; } .cell .n { font-size: 0.66rem; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Open times</h1>
+  <p class="muted">Exactly the times a visitor sees on the booking form right now, in IST. Read-only: nothing can be booked here.</p>
+
+  <div class="bar">
+    <button type="button" id="prev" aria-label="Previous month">‹</button>
+    <h2 id="month" aria-live="polite"></h2>
+    <button type="button" id="next" aria-label="Next month">›</button>
+  </div>
+
+  <div class="grid" id="dows"></div>
+  <div class="grid" id="days"></div>
+  <div class="msg" id="status" role="status"></div>
+
+  <section class="card" id="day" hidden>
+    <h3 id="day-title"></h3>
+    <div id="day-times"></div>
+  </section>
+
+  <div class="foot">
+    <span class="muted" id="updated"></span>
+    <button type="button" class="primary" id="refresh">Refresh</button>
+  </div>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var TZ = 'Asia/Kolkata';
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  var DOWS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var $ = function (id) { return document.getElementById(id); };
+
+  // Today in IST, whatever the phone's own time zone
+  function istToday() {
+    var p = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    return p; // YYYY-MM-DD
+  }
+  var today = istToday();
+  var first = { y: +today.slice(0, 4), m: +today.slice(5, 7) - 1 };
+  var view = { y: first.y, m: first.m };
+  var data = null, selected = null, loading = 0;
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function key(y, m, d) { return y + '-' + pad(m + 1) + '-' + pad(d); }
+  function nice(k) {
+    var d = new Date(k + 'T12:00:00Z');
+    return d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+  }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+  DOWS.forEach(function (d) { $('dows').appendChild(el('div', 'dow', d)); });
+
+  function render() {
+    $('month').textContent = MONTHS[view.m] + ' ' + view.y;
+    $('prev').disabled = view.y === first.y && view.m === first.m;
+    var box = $('days');
+    box.textContent = '';
+    var startDow = new Date(Date.UTC(view.y, view.m, 1)).getUTCDay();
+    var days = new Date(Date.UTC(view.y, view.m + 1, 0)).getUTCDate();
+    for (var i = 0; i < startDow; i++) box.appendChild(el('div', 'cell'));
+    for (var d = 1; d <= days; d++) {
+      var k = key(view.y, view.m, d);
+      var times = data && k >= today && data.slotsByDate && data.slotsByDate[k] || [];
+      if (times.length) {
+        var b = el('button', 'cell' + (k === today ? ' today' : '') + (k === selected ? ' sel' : ''));
+        b.type = 'button';
+        b.appendChild(document.createTextNode(String(d)));
+        b.appendChild(el('span', 'n', times.length + (times.length === 1 ? ' time' : ' times')));
+        b.setAttribute('aria-label', nice(k) + ', ' + times.length + ' open times');
+        b.addEventListener('click', (function (kk) { return function () { selected = kk; render(); }; })(k));
+        box.appendChild(b);
+      } else {
+        box.appendChild(el('div', 'cell', String(d)));
+      }
+    }
+    showDay();
+  }
+
+  function showDay() {
+    var times = selected && data && data.slotsByDate && data.slotsByDate[selected];
+    if (!times || !times.length) { $('day').hidden = true; return; }
+    $('day').hidden = false;
+    $('day-title').textContent = nice(selected) + ' · ' + times.length + (times.length === 1 ? ' open time' : ' open times');
+    var out = $('day-times');
+    out.textContent = '';
+    // Split as the booking form does: times ending in "am" are the morning
+    var am = times.filter(function (t) { return /\bam$/i.test(String(t).trim()); });
+    var pm = times.filter(function (t) { return am.indexOf(t) < 0; });
+    [['Morning', am], ['Afternoon', pm]].forEach(function (g) {
+      if (!g[1].length) return;
+      out.appendChild(el('div', 'label', g[0]));
+      var row = el('div', 'times');
+      g[1].forEach(function (t) { row.appendChild(el('span', 't', String(t))); }); // as the form shows it
+      out.appendChild(row);
+    });
+  }
+
+  function load() {
+    var mine = ++loading;
+    var monthStr = view.y + '-' + pad(view.m + 1);
+    data = null;
+    $('status').className = 'msg';
+    $('status').textContent = 'Loading open times…';
+    $('days').textContent = '';
+    $('day').hidden = true;
+    $('refresh').disabled = true;
+    fetch('/api/available-slots?month=' + monthStr + '&timeZone=' + encodeURIComponent(TZ), { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error(String(r.status))); })
+      .then(function (j) {
+        if (mine !== loading) return;
+        if (!j || !j.slotsByDate) throw new Error('no data');
+        data = j;
+        today = istToday();
+        var open = Object.keys(j.slotsByDate).filter(function (k) { return k >= today && j.slotsByDate[k].length; }).sort();
+        if (!selected || selected.slice(0, 7) !== monthStr || open.indexOf(selected) < 0) selected = open[0] || null;
+        $('status').textContent = open.length ? '' : 'No open times this month.';
+        $('updated').textContent = 'Last updated ' + new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: TZ }) + ' IST';
+        render();
+      })
+      .catch(function () {
+        if (mine !== loading) return;
+        $('status').className = 'msg err';
+        $('status').textContent = 'Couldn’t load the open times from Cal.com. Press Refresh to try again.';
+        render();
+      })
+      .then(function () { if (mine === loading) $('refresh').disabled = false; });
+  }
+
+  $('prev').addEventListener('click', function () { if (--view.m < 0) { view.m = 11; view.y--; } selected = null; load(); });
+  $('next').addEventListener('click', function () { if (++view.m > 11) { view.m = 0; view.y++; } selected = null; load(); });
+  $('refresh').addEventListener('click', load);
+  load();
+})();
+</script>
+</body>
+</html>
