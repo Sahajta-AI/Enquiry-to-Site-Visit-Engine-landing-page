@@ -1179,6 +1179,24 @@ test('V2 Odoo 11: a cancelled call: one note (by them / by you, reason when give
   const c3 = notes.filter(x => x.body.startsWith('Call cancelled'));
   assert.deepStrictEqual(c3[0].body.split('<br>').slice(1), ['Cancelled by: not recorded by Cal.com', 'Reason: Not a fit']);
   assert.match(openActs(leads[0].id)[0].note, /^<p>The call was cancelled\. WhatsApp them/);
+
+  // 28 Nov, Shubhang's test: cancelled from the Cal.com Bookings page while logged in -> his host email. The webhook
+  // left it blank here, so Cal.com's record of the booking is read; the attendee was the host too: still "you"
+  for (const [uid, rec, webhookBy, want] of [
+    ['bk-v3g', { cancelledByEmail: 'shubhangsethi@gmail.com', hosts: [{ email: 'shubhangsethi@gmail.com' }] }, '', 'you'],
+    ['bk-v3h', null, 'shubhangsethi@gmail.com', 'you'],
+    ['bk-v3i', { cancelledByEmail: '', hosts: [{ email: 'shubhangsethi@gmail.com' }] }, '', 'not recorded by Cal.com']
+  ]) {
+    v2on();
+    const bx = leadBody({ email: 'shubhangsethi@gmail.com', whatsapp_number: '9803030303' });
+    await sendLead(bx);
+    await bookV2(uid, bx.email, inDays(3, 10).toISOString());
+    if (rec) calBookings[uid] = Object.assign({ status: 'cancelled', start: inDays(3, 10).toISOString() }, rec);
+    await hook('BOOKING_CANCELLED', uid, bx.email, inDays(3, 10).toISOString(), { cancelledBy: webhookBy, organizer: webhookBy ? { email: 'shubhangsethi@gmail.com' } : {} });
+    await settle();
+    const cx = notes.filter(x => x.body.startsWith('Call cancelled'));
+    assert.strictEqual(cx[0].body.split('<br>')[1], 'Cancelled by: ' + want, uid);
+  }
 });
 
 test('V2 Odoo 6: emails Gmail accepted go into the lead\'s log once ("Email sent: …", a blank line, the full text); not for a lead without the tag; nothing with V2 off', async () => {
